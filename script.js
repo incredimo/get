@@ -33,6 +33,7 @@ const preload = () => {
   
 	bindEvents() {
 	  window.addEventListener('resize', this.onWindowResize.bind(this));
+	  window.addEventListener('deviceorientation', this.onDeviceOrientation.bind(this));
 	  window.matchMedia('(prefers-color-scheme: dark)').addListener(this.detectDarkMode.bind(this));
 	}
   
@@ -80,6 +81,11 @@ const preload = () => {
 	  this.camera.aspect = this.container.clientWidth / this.container.clientHeight;
 	  this.camera.updateProjectionMatrix();
 	  this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+	}
+  
+	onDeviceOrientation(event) {
+	  const { alpha, beta, gamma } = event;
+	  this.createParticles.updateOrientation(alpha, beta, gamma);
 	}
   }
   
@@ -150,6 +156,13 @@ const preload = () => {
 	onMouseMove() {
 	  this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
 	  this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+	}
+  
+	updateOrientation(alpha, beta, gamma) {
+	  const angleX = (beta || 0) / 180 * Math.PI;
+	  const angleY = (gamma || 0) / 180 * Math.PI;
+	  this.mouse.x = Math.sin(angleY);
+	  this.mouse.y = Math.sin(angleX);
 	}
   
 	render() {
