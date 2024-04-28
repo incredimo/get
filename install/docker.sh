@@ -32,10 +32,11 @@ echo -e "${CYAN}
 ---------------------------------------------
  github.com/incredimo | aghil@xo.rs | xo.rs
 ---------------------------------------------
+INSTALLING DOCKER AND DOCKER COMPOSE ON LINUX
+---------------------------------------------
 ${NC}"
 # Check if the script is being run with root privileges
 
-# Check if the script is being run with root privileges
 if [[ $EUID -ne 0 ]]; then
     print_colored "This script must be run as root. Please use 'sudo' or log in as the root user." $RED
     exit 1
