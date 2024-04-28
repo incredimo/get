@@ -13,13 +13,10 @@ print_colored() {
     echo -e "${2}${1}${NC}"
 }
 
-# Function to check if a command exists
-command_exists() {
-    command -v "$1" >/dev/null 2>&1
-}
-
 # Display banner
 echo -e "${CYAN}
+
+
  /██   /██  /██████      /██████   /███████
  |  ██ /██/ /██__  ██    /██__  ██ /██_____/
   \  ████/ | ██  \ ██   | ██  \__/|  ██████
@@ -47,6 +44,11 @@ apt-get update || { print_colored "Failed to update package lists. Please check 
 print_colored "Installing required packages..." $CYAN
 apt-get install -y pciutils lshw wget || { print_colored "Failed to install required packages." $RED; exit 1; }
 
+# Add non-free repositories if not already added
+print_colored "Adding non-free repositories..." $CYAN
+echo "deb http://deb.debian.org/debian `grep '^VERSION_CODENAME=' /etc/os-release | cut -d= -f2` main contrib non-free" | tee /etc/apt/sources.list.d/non-free.list
+apt-get update
+
 # Detect NVIDIA or Quadro GPU
 if lspci | grep -Eqi 'nvidia|quadro'; then
     print_colored "NVIDIA or Quadro GPU detected. Proceeding with driver installation..." $GREEN
@@ -58,7 +60,7 @@ if lspci | grep -Eqi 'nvidia|quadro'; then
         update-initramfs -u
     fi
 
-    # Install the latest NVIDIA driver available in Debian
+    # Install the NVIDIA driver
     print_colored "Installing NVIDIA driver..." $CYAN
     apt-get install -y nvidia-driver || { print_colored "Failed to install NVIDIA driver." $RED; exit 1; }
 
