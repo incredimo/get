@@ -41,6 +41,10 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
+# Remove any existing Docker repositories for Ubuntu
+print_colored "Removing any existing Docker repositories for Ubuntu..." $CYAN
+sed -i '/download.docker.com\/linux\/ubuntu/d' /etc/apt/sources.list /etc/apt/sources.list.d/*.list
+
 # Update package lists
 print_colored "Updating package lists..." $CYAN
 apt-get update || { print_colored "Failed to update package lists. Please check your internet connection." $RED; exit 1; }
@@ -57,9 +61,7 @@ curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/
 print_colored "Setting up the stable repository for Debian..." $CYAN
 echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null || { print_colored "Failed to set up the stable repository for Debian." $RED; exit 1; }
 
-# Remove any existing Docker repositories for Ubuntu
-print_colored "Removing any existing Docker repositories for Ubuntu..." $CYAN
-sed -i '/download.docker.com\/linux\/ubuntu/d' /etc/apt/sources.list /etc/apt/sources.list.d/*.list
+
 
 # Update package lists again
 print_colored "Updating package lists..." $CYAN
