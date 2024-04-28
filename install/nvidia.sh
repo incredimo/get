@@ -58,13 +58,9 @@ if lspci | grep -Eqi 'nvidia|quadro'; then
         update-initramfs -u
     fi
 
-    # Add the official NVIDIA PPA
-    add-apt-repository ppa:graphics-drivers/ppa -y
-    apt-get update
-
-    # Automatically install the recommended driver
-    recommended_driver=$(ubuntu-drivers devices | grep 'recommended' | grep -oP 'nvidia-driver-\S+')
-    apt-get install -y $recommended_driver
+    # Install the latest NVIDIA driver available in Debian
+    print_colored "Installing NVIDIA driver..." $CYAN
+    apt-get install -y nvidia-driver || { print_colored "Failed to install NVIDIA driver." $RED; exit 1; }
 
     # Check if NVIDIA driver is installed and loaded
     if command_exists nvidia-smi; then
