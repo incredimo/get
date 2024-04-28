@@ -33,7 +33,6 @@ echo -e "${CYAN}
  github.com/incredimo | aghil@xo.rs | xo.rs
 ---------------------------------------------
 ${NC}"
-
 # Check if the script is being run with root privileges
 if [[ $EUID -ne 0 ]]; then
     print_colored "This script must be run as root. Please use 'sudo' or log in as the root user." $RED
@@ -50,11 +49,11 @@ apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release ||
 
 # Add Docker's official GPG key
 print_colored "Adding Docker's official GPG key..." $CYAN
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg || { print_colored "Failed to add Docker's official GPG key." $RED; exit 1; }
+curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg || { print_colored "Failed to add Docker's official GPG key." $RED; exit 1; }
 
-# Set up the stable repository
-print_colored "Setting up the stable repository..." $CYAN
-echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null || { print_colored "Failed to set up the stable repository." $RED; exit 1; }
+# Set up the stable repository for Debian
+print_colored "Setting up the stable repository for Debian..." $CYAN
+echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null || { print_colored "Failed to set up the stable repository for Debian." $RED; exit 1; }
 
 # Update package lists again
 print_colored "Updating package lists..." $CYAN
