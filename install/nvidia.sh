@@ -21,18 +21,17 @@ command_exists() {
 # Display banner
 echo -e "${CYAN}
 
-                                           
-                                           
+
  /██   /██  /██████      /██████   /███████
-|  ██ /██/ /██__  ██    /██__  ██ /██_____/
- \  ████/ | ██  \ ██   | ██  \__/|  ██████ 
-  >██  ██ | ██  | ██   | ██       \____  ██
- /██/\  ██|  ██████//██| ██       /███████/
-|__/  \__/ \______/|__/|__/      |_______/ 
+ |  ██ /██/ /██__  ██    /██__  ██ /██_____/
+  \  ████/ | ██  \ ██   | ██  \__/|  ██████
+   >██  ██ | ██  | ██   | ██       \____  ██
+  /██/\  ██|  ██████//██| ██       /███████/
+ |__/  \__/ \______/|__/|__/      |_______/
 ---------------------------------------------
  github.com/incredimo | aghil@xo.rs | xo.rs
 ---------------------------------------------
-  INSTALLING NVIDIA/QUADRO DRIVERS ON LINUX
+ INSTALLING NVIDIA/QUADRO DRIVERS ON LINUX
 ---------------------------------------------
 ${NC}"
 
@@ -60,8 +59,8 @@ if echo "$gpu_info" | grep -qi 'nvidia'; then
     print_colored "Detected NVIDIA/Quadro GPU: $gpu_model" $GREEN
 
     # Download the appropriate NVIDIA driver package
-    driver_package="NVIDIA-Linux-x86_64-$(wget -qO- https://www.nvidia.com/Download/processFind.aspx?psid=101&pfid=867&osid=36&lid=1&whql=1&lang=en-us&ctk=0 | grep -oP 'NVIDIA-Linux-x86_64-\d+\.\d+\.run')"
-    wget "https://www.nvidia.com/download/driverResults.aspx/$(echo "$driver_package" | sed 's/^NVIDIA-//;s/\.run$//')/$driver_package"
+    driver_package=$(wget -qO- https://www.nvidia.com/Download/processFind.aspx?psid=101&pfid=867&osid=36&lid=1&whql=1&lang=en-us&ctk=0 | grep -oP 'NVIDIA-Linux-x86_64-\d+\.\d+\.run')
+    wget "https://us.download.nvidia.com/XFree86/Linux-x86_64/$driver_package"
 
     # Install the NVIDIA driver
     chmod +x "$driver_package"
