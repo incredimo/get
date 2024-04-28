@@ -12,32 +12,22 @@ if [ "$(id -u)" != "0" ]; then
     exit 1
 fi
 
-# Check the distribution
+# Detect the distribution
 if [ -f /etc/os-release ]; then
     . /etc/os-release
     DIST=$ID
-    VER=$VERSION_ID
 elif type lsb_release >/dev/null 2>&1; then
     DIST=$(lsb_release -si)
-    VER=$(lsb_release -sr)
 elif [ -f /etc/debian_version ]; then
     DIST=Debian
-    VER=$(cat /etc/debian_version)
-elif [ -f /etc/redhat-release ]; then
-    DIST=$(sed 's/\\.*$//' /etc/redhat-release)
-    VER=$(sed 's/.*release\ //' /etc/redhat-release | sed 's/\..*$//')
 else
     echo -e "${RED}Unable to determine distribution${NC}" 1>&2
     exit 1
 fi
 
-# Check the package manager
+# Check if the distribution is supported
 case "$DIST" in
     Ubuntu|Debian)
-        PKG_MGR="apt-get -y"
-        ;;
-    CentOS|RedHatEnterpriseServer|RedHatEnterpriseClient)
-        PKG_MGR="yum -y"
         ;;
     *)
         echo -e "${RED}Unsupported distribution: $DIST${NC}" 1>&2
@@ -47,21 +37,13 @@ esac
 
 # Install prerequisites
 echo -e "${GREEN}Installing prerequisites...${NC}"
-case "$DIST" in
-    Ubuntu|Debian)
-        $PKG_MGR update
-        $PKG_MGR install \
-            apt-transport-https \
-            ca-certificates \
-            curl \
-            gnupg2 \
-            software-properties-common
-        ;;
-    CentOS|RedHatEnterpriseServer|RedHatEnterpriseClient)
-        $PKG_MGR install -y yum-utils
-        yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-        ;;
-esac
+apt-get update
+apt-get install -y \
+    apt-transport-https \
+    ca-certificates \
+    curl \
+    gnupg2 \
+    software-properties-common
 
 # Add Docker's official GPG key
 echo -e "${GREEN}Adding Docker's official GPG key...${NC}"
@@ -69,25 +51,12 @@ curl -fsSL https://download.docker.com/linux/$DIST/gpg | gpg --dearmor -o /usr/s
 
 # Set up the stable repository
 echo -e "${GREEN}Setting up the stable repository...${NC}"
-case "$DIST" in
-    Ubuntu|Debian)
-        echo \
-            "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/$DIST \
-            $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list
-        $PKG_MGR update
-        ;;
-esac
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/$DIST $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list
+apt-get update
 
 # Install Docker Engine
 echo -e "${GREEN}Installing Docker Engine...${NC}"
-case "$DIST" in
-    Ubuntu|Debian)
-        $PKG_MGR install docker-ce docker-ce-cli containerd.io
-        ;;
-    CentOS|RedHatEnterpriseServer|RedHatEnterpriseClient)
-        $PKG_MGR install docker-ce docker-ce-cli containerd.io
-        ;;
-esac
+apt-get install -y docker-ce docker-ce-cli containerd.io
 
 # Install Docker Compose
 echo -e "${GREEN}Installing Docker Compose...${NC}"
@@ -102,16 +71,8 @@ source ~/.bashrc
 
 # Enable and start Docker service
 echo -e "${GREEN}Enabling and starting Docker service...${NC}"
-case "$DIST" in
-    Ubuntu|Debian)
-        systemctl enable docker.service
-        systemctl start docker.service
-        ;;
-    CentOS|RedHatEnterpriseServer|RedHatEnterpriseClient)
-        systemctl enable docker.service
-        systemctl start docker.service
-        ;;
-esac
+systemctl enable docker.service
+systemctl start docker.service
 
 # Enable Docker service to start on system boot
 echo -e "${GREEN}Configuring Docker to start on system boot...${NC}"
