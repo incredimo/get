@@ -20,8 +20,6 @@ command_exists() {
 
 # Display banner
 echo -e "${CYAN}
-
-
  /██   /██  /██████      /██████   /███████
  |  ██ /██/ /██__  ██    /██__  ██ /██_____/
   \  ████/ | ██  \ ██   | ██  \__/|  ██████
@@ -47,40 +45,35 @@ apt-get update || { print_colored "Failed to update package lists. Please check 
 
 # Install required packages
 print_colored "Installing required packages..." $CYAN
-apt-get install -y pciutils wget || { print_colored "Failed to install required packages." $RED; exit 1; }
+apt-get install -y pciutils lshw wget || { print_colored "Failed to install required packages." $RED; exit 1; }
 
-# Detect the GPU
-gpu_info=$(lspci | grep -i 'vga\|3d\|2d')
+# Detect NVIDIA or Quadro GPU
+if lspci | grep -Eqi 'nvidia|quadro'; then
+    print_colored "NVIDIA or Quadro GPU detected. Proceeding with driver installation..." $GREEN
 
-# Check if the GPU is NVIDIA or Quadro
-if echo "$gpu_info" | grep -qi 'nvidia'; then
-    # Extract the GPU model from the lspci output
-    gpu_model=$(echo "$gpu_info" | awk -F': ' '{print $3}' | awk '{print $1}')
-    print_colored "Detected NVIDIA/Quadro GPU: $gpu_model" $GREEN
+    # Blacklist Nouveau driver if present
+    if lsmod | grep -qi "nouveau"; then
+        echo "blacklist nouveau" >> /etc/modprobe.d/blacklist-nvidia-nouveau.conf
+        print_colored "Blacklisting Nouveau driver..." $YELLOW
+        update-initramfs -u
+    fi
 
-    # Download the appropriate NVIDIA driver package
-    driver_package=$(wget -qO- https://www.nvidia.com/Download/processFind.aspx?psid=101&pfid=867&osid=36&lid=1&whql=1&lang=en-us&ctk=0 | grep -oP 'NVIDIA-Linux-x86_64-\d+\.\d+\.run')
-    wget "https://us.download.nvidia.com/XFree86/Linux-x86_64/$driver_package"
+    # Add the official NVIDIA PPA
+    add-apt-repository ppa:graphics-drivers/ppa -y
+    apt-get update
 
-    # Install the NVIDIA driver
-    chmod +x "$driver_package"
-    "./$driver_package" --dkms --no-kernel-sources
-    if [ $? -eq 0 ]; then
-        print_colored "NVIDIA/Quadro driver installation completed successfully." $GREEN
+    # Automatically install the recommended driver
+    recommended_driver=$(ubuntu-drivers devices | grep 'recommended' | grep -oP 'nvidia-driver-\S+')
+    apt-get install -y $recommended_driver
+
+    # Check if NVIDIA driver is installed and loaded
+    if command_exists nvidia-smi; then
+        print_colored "NVIDIA driver installation successful." $GREEN
+        print_colored "Please reboot your system for the changes to take effect." $GREEN
     else
-        print_colored "NVIDIA/Quadro driver installation failed." $RED
+        print_colored "Failed to install NVIDIA driver." $RED
         exit 1
     fi
 else
-    print_colored "No NVIDIA/Quadro GPU detected." $YELLOW
-    exit 0
+    print_colored "No NVIDIA or Quadro GPU detected." $YELLOW
 fi
-
-# Regenerate the kernel initramfs
-update-initramfs -u
-
-# Activate the changes for the current user
-print_colored "Activating the changes for the current user..." $CYAN
-newgrp video
-
-print_colored "Please reboot your system for the changes to take effect." $GREEN
