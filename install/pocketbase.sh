@@ -96,7 +96,7 @@ Description=PocketBase service
 After=network.target
 
 [Service]
-ExecStart=/usr/local/bin/pocketbase serve --dir /var/lib/pocketbase
+ExecStart=/usr/local/bin/pocketbase serve --http 127.0.0.1:8080 --data-dir /var/lib/pocketbase/data --config-dir /var/lib/pocketbase/config
 Restart=always
 User=root
 
