@@ -53,27 +53,18 @@ run_command apt-get update || {
 
 # Install required packages
 print_colored "Installing required packages..." $CYAN
-run_command apt-get install -y wget unzip || {
+run_command apt-get install -y wget unzip curl || {
     print_colored "Failed to install required packages." $RED
     exit 1
 }
 
-# Check if curl is available
-if command_exists curl; then
-    DOWNLOAD_COMMAND="curl -sLO"
-    DOWNLOAD_TOOL="curl"
-else
-    DOWNLOAD_COMMAND="wget -qO"
-    DOWNLOAD_TOOL="wget"
-fi
-
 # Get the latest PocketBase release version
-LATEST_RELEASE=$(${DOWNLOAD_TOOL} -qO- https://github.com/pocketbase/pocketbase/releases/latest | grep -oP 'tag/v\K\d+\.\d+\.\d+')
+LATEST_RELEASE=$(curl -sL https://github.com/pocketbase/pocketbase/releases/latest | grep -oP 'tag/v\K\d+\.\d+\.\d+')
 
 # Download PocketBase
 print_colored "Downloading PocketBase version $LATEST_RELEASE..." $CYAN
 DOWNLOAD_URL="https://github.com/pocketbase/pocketbase/releases/download/v$LATEST_RELEASE/pocketbase_${LATEST_RELEASE}_linux_amd64.zip"
-${DOWNLOAD_COMMAND} "$DOWNLOAD_URL" || {
+curl -sLO "$DOWNLOAD_URL" || {
     print_colored "Failed to download PocketBase." $RED
     exit 1
 }
