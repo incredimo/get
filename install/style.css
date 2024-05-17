@@ -1,3 +1,5 @@
+/* style.css */
+
 @import url('https://fonts.googleapis.com/css2?family=Roboto&display=swap');
 
 html, body {
@@ -5,8 +7,9 @@ html, body {
   height: 100%;
   overflow: hidden;
   font-family: 'Roboto', sans-serif;
-  background-color: black;
   color: white;
+  font-size: 9px;
+  background-color: #000000;
 }
 
 #magic {
@@ -29,13 +32,8 @@ html, body {
   display: flex;
   flex-wrap: nowrap;
   flex-direction: column;
-  justify-content: flex-start;
+  justify-content: flex-end;
   align-items: center;
-}
-
-.topPosition {
-  text-align: center;
-  margin-top: 50px;
 }
 
 .bottomPosition {
@@ -45,7 +43,7 @@ html, body {
 
 .minText {
   max-width: 400px;
-  margin: 20px auto;
+  margin: 0 auto;
   word-spacing: 5px;
   font-size: 14px;
   line-height: 1.5;
@@ -57,9 +55,31 @@ a {
   text-decoration: none;
 }
 
+.logo {
+  width: 50px;
+  height: 50px;
+}
+
+.paragraph {
+  font-size: 12px;
+  text-align: center;
+  margin: 0;
+  padding: 0;
+}
+
+footer {
+  padding: 20px;
+  text-align: center;
+}
+
 .special {
   font-size: 24px;
   margin-bottom: 10px;
+}
+
+.minText {
+  font-size: 14px;
+  color: #888;
 }
 
 .divider {
@@ -96,86 +116,4 @@ a {
   flex-direction: row;
   justify-content: center;
   align-items: center;
-}
-
-/* Glitch Effect */
-.glitch {
-  font-size: 36px;
-  position: relative;
-  color: white;
-  animation: glitch-animation 1.5s infinite;
-}
-
-.glitch-text {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-}
-
-.glitch-text:nth-child(1) {
-  clip: rect(44px, 450px, 56px, 0);
-  animation: glitch-skew 2s infinite linear alternate-reverse;
-}
-
-.glitch-text:nth-child(2) {
-  clip: rect(85px, 9999px, 140px, 0);
-  animation: glitch-skew 3s infinite linear alternate-reverse;
-}
-
-.glitch-text:nth-child(3) {
-  clip: rect(140px, 450px, 150px, 0);
-  animation: glitch-skew 4s infinite linear alternate-reverse;
-}
-
-@keyframes glitch-animation {
-  0% {
-    transform: skew(0.5deg);
-  }
-  2%, 64% {
-    transform: skew(0.5deg) translate(0, 0);
-  }
-  66% {
-    transform: skew(0.5deg) translate(-5px, -5px);
-  }
-  68% {
-    transform: skew(0.5deg) translate(5px, 5px);
-  }
-  70%, 100% {
-    transform: skew(0.5deg) translate(0, 0);
-  }
-}
-
-@keyframes glitch-skew {
-  0% {
-    transform: skew(0.5deg);
-  }
-  2%, 64% {
-    transform: skew(0.5deg) translate(0, 0);
-  }
-  66% {
-    transform: skew(0.5deg) translate(-5px, -5px);
-  }
-  68% {
-    transform: skew(0.5deg) translate(5px, 5px);
-  }
-  70%, 100% {
-    transform: skew(0.5deg) translate(0, 0);
-  }
-}
-
-#fileList {
-  list-style: none;
-  padding: 0;
-  margin: 20px auto;
-  max-width: 400px;
-}
-
-#fileList li {
-  background: rgba(255, 255, 255, 0.1);
-  padding: 10px;
-  margin: 5px 0;
-  border-radius: 5px;
-  font-size: 16px;
-  text-align: left;
 }
