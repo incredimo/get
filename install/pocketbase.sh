@@ -44,6 +44,7 @@ INSTALLING POCKETBASE ON DEBIAN
 ${NC}"
 
 
+
 # Update package lists
 print_colored "Updating package lists..." $CYAN
 run_command apt-get update || {
@@ -59,7 +60,7 @@ run_command apt-get install -y wget unzip curl || {
 }
 
 # Get the latest PocketBase release version
-LATEST_RELEASE=$(curl -sL https://github.com/pocketbase/pocketbase/releases/latest | grep -oP 'tag/v\K\d+\.\d+\.\d+')
+LATEST_RELEASE=$(curl -sL https://api.github.com/repos/pocketbase/pocketbase/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' | cut -c 2-)
 
 # Download PocketBase
 print_colored "Downloading PocketBase version $LATEST_RELEASE..." $CYAN
@@ -71,13 +72,13 @@ wget "$DOWNLOAD_URL" || {
 
 # Unzip PocketBase
 print_colored "Unzipping PocketBase..." $CYAN
-unzip -o pocketbase_${LATEST_RELEASE}_linux_amd64.zip -d /usr/local/bin/ || {
+unzip -o "pocketbase_${LATEST_RELEASE}_linux_amd64.zip" -d /usr/local/bin/ || {
     print_colored "Failed to extract PocketBase." $RED
     exit 1
 }
 
 # Clean up the zip file
-rm pocketbase_${LATEST_RELEASE}_linux_amd64.zip
+rm "pocketbase_${LATEST_RELEASE}_linux_amd64.zip"
 
 # Make PocketBase executable
 print_colored "Making PocketBase executable..." $CYAN
