@@ -57,7 +57,8 @@ wget -qO- https://github.com/pocketbase/pocketbase/releases/latest/download/pock
 
 # Unzip PocketBase
 print_colored "Unzipping PocketBase..." $CYAN
-unzip -o pocketbase.zip -d /usr/local/bin/ || { print_colored "Failed to unzip PocketBase." $RED; exit 1; }
+tar -xf pocketbase.zip -C /usr/local/bin/ || { print_colored "Failed to extract PocketBase." $RED; exit 1; }
+
 
 # Clean up the zip file
 rm pocketbase.zip
