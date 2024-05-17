@@ -42,6 +42,8 @@ echo -e "${CYAN}
 INSTALLING POCKETBASE ON DEBIAN
 ---------------------------------------------
 ${NC}"
+
+
 # Update package lists
 print_colored "Updating package lists..." $CYAN
 run_command apt-get update || {
@@ -51,31 +53,31 @@ run_command apt-get update || {
 
 # Install required packages
 print_colored "Installing required packages..." $CYAN
-run_command apt-get install -y wget unzip || {
+run_command apt-get install -y wget unzip curl || {
     print_colored "Failed to install required packages." $RED
     exit 1
 }
 
 # Get the latest PocketBase release version
-LATEST_RELEASE=$(wget -qO- https://github.com/pocketbase/pocketbase/releases/latest --server-response --max-redirect 0 2>&1 | sed -n -e 's|.* /v\([0-9]*\.[0-9]*\.[0-9]*\)/.*|\1|p')
+LATEST_RELEASE=$(curl -sL https://github.com/pocketbase/pocketbase/releases/latest | grep -oP 'tag/v\K\d+\.\d+\.\d+')
 
 # Download PocketBase
 print_colored "Downloading PocketBase version $LATEST_RELEASE..." $CYAN
 DOWNLOAD_URL="https://github.com/pocketbase/pocketbase/releases/download/v$LATEST_RELEASE/pocketbase_${LATEST_RELEASE}_linux_amd64.zip"
-wget -qO pocketbase.zip "$DOWNLOAD_URL" || {
+curl -sLO "$DOWNLOAD_URL" || {
     print_colored "Failed to download PocketBase." $RED
     exit 1
 }
 
 # Unzip PocketBase
 print_colored "Unzipping PocketBase..." $CYAN
-unzip -o pocketbase.zip -d /usr/local/bin/ || {
+unzip -o pocketbase_${LATEST_RELEASE}_linux_amd64.zip -d /usr/local/bin/ || {
     print_colored "Failed to extract PocketBase." $RED
     exit 1
 }
 
 # Clean up the zip file
-rm pocketbase.zip
+rm pocketbase_${LATEST_RELEASE}_linux_amd64.zip
 
 # Make PocketBase executable
 print_colored "Making PocketBase executable..." $CYAN
