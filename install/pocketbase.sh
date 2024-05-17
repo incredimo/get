@@ -42,30 +42,47 @@ echo -e "${CYAN}
 INSTALLING POCKETBASE ON DEBIAN
 ---------------------------------------------
 ${NC}"
-
 # Update package lists
 print_colored "Updating package lists..." $CYAN
-run_command apt-get update || { print_colored "Failed to update package lists. Please check your internet connection." $RED; exit 1; }
+run_command apt-get update || {
+    print_colored "Failed to update package lists. Please check your internet connection." $RED
+    exit 1
+}
 
 # Install required packages
 print_colored "Installing required packages..." $CYAN
-run_command apt-get install -y wget unzip || { print_colored "Failed to install required packages." $RED; exit 1; }
+run_command apt-get install -y wget unzip || {
+    print_colored "Failed to install required packages." $RED
+    exit 1
+}
+
+# Get the latest PocketBase release version
+LATEST_RELEASE=$(wget -qO- https://github.com/pocketbase/pocketbase/releases/latest --server-response --max-redirect 0 2>&1 | sed -n -e 's|.* /v\([0-9]*\.[0-9]*\.[0-9]*\)/.*|\1|p')
 
 # Download PocketBase
-print_colored "Downloading PocketBase..." $CYAN
-wget -qO- https://github.com/pocketbase/pocketbase/releases/latest/download/pocketbase_linux_amd64.zip -O pocketbase.zip || { print_colored "Failed to download PocketBase." $RED; exit 1; }
+print_colored "Downloading PocketBase version $LATEST_RELEASE..." $CYAN
+DOWNLOAD_URL="https://github.com/pocketbase/pocketbase/releases/download/v$LATEST_RELEASE/pocketbase_${LATEST_RELEASE}_linux_amd64.zip"
+wget -qO pocketbase.zip "$DOWNLOAD_URL" || {
+    print_colored "Failed to download PocketBase." $RED
+    exit 1
+}
 
 # Unzip PocketBase
 print_colored "Unzipping PocketBase..." $CYAN
-tar -xf pocketbase.zip -C /usr/local/bin/ || { print_colored "Failed to extract PocketBase." $RED; exit 1; }
-
+unzip -o pocketbase.zip -d /usr/local/bin/ || {
+    print_colored "Failed to extract PocketBase." $RED
+    exit 1
+}
 
 # Clean up the zip file
 rm pocketbase.zip
 
 # Make PocketBase executable
 print_colored "Making PocketBase executable..." $CYAN
-run_command chmod +x /usr/local/bin/pocketbase || { print_colored "Failed to make PocketBase executable." $RED; exit 1; }
+run_command chmod +x /usr/local/bin/pocketbase || {
+    print_colored "Failed to make PocketBase executable." $RED
+    exit 1
+}
 
 # Create PocketBase systemd service file
 print_colored "Creating PocketBase systemd service file..." $CYAN
@@ -105,9 +122,8 @@ print_colored "Config Directory: /var/lib/pocketbase/config" $CYAN
 
 # Display service management instructions
 print_colored "To manage the PocketBase service:" $CYAN
-print_colored "Start the service:    sudo systemctl start pocketbase" $CYAN
-print_colored "Stop the service:     sudo systemctl stop pocketbase" $CYAN
-print_colored "Restart the service:  sudo systemctl restart pocketbase" $CYAN
-print_colored "Check status:         sudo systemctl status pocketbase" $CYAN
-
+print_colored "Start the service: sudo systemctl start pocketbase" $CYAN
+print_colored "Stop the service: sudo systemctl stop pocketbase" $CYAN
+print_colored "Restart the service: sudo systemctl restart pocketbase" $CYAN
+print_colored "Check status: sudo systemctl status pocketbase" $CYAN
 print_colored "Installation complete. PocketBase is running as a systemd service." $GREEN
