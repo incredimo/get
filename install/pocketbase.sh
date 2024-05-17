@@ -64,7 +64,7 @@ LATEST_RELEASE=$(curl -sL https://github.com/pocketbase/pocketbase/releases/late
 # Download PocketBase
 print_colored "Downloading PocketBase version $LATEST_RELEASE..." $CYAN
 DOWNLOAD_URL="https://github.com/pocketbase/pocketbase/releases/download/v$LATEST_RELEASE/pocketbase_${LATEST_RELEASE}_linux_amd64.zip"
-curl -sLO "$DOWNLOAD_URL" || {
+wget "$DOWNLOAD_URL" || {
     print_colored "Failed to download PocketBase." $RED
     exit 1
 }
