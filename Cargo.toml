@@ -1,0 +1,12 @@
+[package]
+name = "get"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+lazy_static = "1.4.0"
+minimo = "0.3.36"
+reqwest = { version = "0.12.4", features = ["stream", "json"] }
+serde = { version = "1.0.202", features = ["derive"] }
+serde_json = "1.0.117"
+tokio = { version = "1.37.0", features = ["full"] }
