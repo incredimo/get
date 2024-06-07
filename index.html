@@ -1,67 +1,57 @@
 <!DOCTYPE html>
-<html lang="en" >
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <title>xo.rs</title>
-  <link rel="stylesheet" href="./website/style.css">
-
+  <link rel="stylesheet" href="./web/style.css">
 </head>
 <body>
 <!-- partial:index.partial.html -->
 <script type="x-shader/x-vertex" id="vertexshader">
-
   attribute float size;
   attribute vec3 customColor;
   varying vec3 vColor;
 
   void main() {
-
     vColor = customColor;
-    vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
-    gl_PointSize = size * ( 300.0 / -mvPosition.z );
+    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    gl_PointSize = size * (300.0 / -mvPosition.z);
     gl_Position = projectionMatrix * mvPosition;
-
   }
-
 </script>
 <script type="x-shader/x-fragment" id="fragmentshader">
+  uniform vec3 color;
+  uniform sampler2D pointTexture;
+  varying vec3 vColor;
 
- uniform vec3 color;
- uniform sampler2D pointTexture;
-
- varying vec3 vColor;
-
- void main() {
-
-   gl_FragColor = vec4( color * vColor, 1.0 );
-   gl_FragColor = gl_FragColor * texture2D( pointTexture, gl_PointCoord );
-
- }
+  void main() {
+    gl_FragColor = vec4(color * vColor, 1.0);
+    gl_FragColor = gl_FragColor * texture2D(pointTexture, gl_PointCoord);
+  }
 </script>
 
 <div id="magic"></div>
 <div class="playground">
   <div class="bottomPosition">
- 
     <footer>
       <h1 class="special">AGHIL MOHANDAS</h1>
       <p class="minText">
         Programmer | App &amp; Web Developer | Engineer | Graphics Designer | Cybersecurity Enthusiast | UX/UI Designer | Data Wrangler | Photographer | Musician | Dreamer
       </p>
-    <!-- divider -->
-    <div class="divider"></div>
-    <!-- email | phone | github -->
-    <div class="contact row">
-      <a href="mailto:aghil@xor.s">aghil@xor.s</a>
-      <a href="tel:+919048000000">+971 555225800</a>
-      <a href="github.com/incredimo">github.com/incredimo</a>
-    </div>
-  </footer>
-    
+      <!-- divider -->
+      <div class="divider"></div>
+      <!-- email | phone | github -->
+      <div class="contact row">
+        <a href="mailto:aghil@xor.s">aghil@xor.s</a>
+        <a href="tel:+919048000000">+971 555225800</a>
+        <a href="github.com/incredimo">github.com/incredimo</a>
+      </div>
+    </footer>
   </div>
 </div>
 <!-- partial -->
-  <script src='https://cdnjs.cloudflare.com/ajax/libs/three.js/r125/three.min.js'></script><script  src="./website/script.js"></script>
+<script src='./web/assets/three.min.js' type="module"></script>
+<script src="./web/script.js" type="module" defer></script>
 
 </body>
 </html>
