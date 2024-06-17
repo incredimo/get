@@ -1,130 +1,188 @@
-mod app;
-mod repository;
+use reqwest::Client;
+use serde::Deserialize;
+use sha2::{Sha256, Digest};
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::{self, Read, Write};
+use std::path::Path;
+use tokio::fs::{self, create_dir_all};
+use zip::ZipArchive;
 
-// get
-// get is simple high perfomant and varsatile alternative to scoop
-// get is a package manager for windows, macos and linux, it uses scoop compatible repositories
-// however it is a complete rewrite of scoop in rust and it is much faster than scoop
-// with get you can install, uninstall, update and search for applications from repositories
-// main.rs
-use crate::app::{AppManager, APP_MANAGER};
-use minimo::{divider, showln, ask, async_selection, async_choice, green_bold, red_bold, yellow_bold, gray_dim};
-use std::future::Future;
-use std::pin::Pin;
-use std::sync::Arc;
-use tokio::sync::Mutex;
+#[derive(Debug)]
+pub enum ScoopError {
+    Network(reqwest::Error),
+    FileIO(io::Error),
+    HashVerification,
+    InvalidUrl,
+    MissingArchitecture,
+    JsonParse(serde_json::Error),
+    ZipExtraction(zip::result::ZipError),
+}
 
-const PR1: &str = "enter the name of the application to search for";
-const PR2: &str = "enter the name of the application to install";
-const PR3: &str = "enter the name of the application to uninstall";
-const PR4: &str = "enter the URL of the repository to add";
-const PR5: &str = "enter the URL of the repository to remove";
-const PR6: &str = "Select an option";
-
-
-
-#[tokio::main]
-async fn main() {
-    loop {
-        divider!();
-        let choices = vec![
-            async_choice!("list", "List installed applications", list_installed_apps),
-            async_choice!("search", "Search for an application", search_app),
-            async_choice!("install", "Install a new application", install_app),
-            async_choice!("uninstall", "Uninstall an application", uninstall_app),
-            async_choice!("update", "Update applications", update_apps),
-            async_choice!("add-repo", "Add a new repository", add_repository),
-            async_choice!("remove-repo", "Remove a repository", remove_repository),
-            async_choice!("list-repos", "List all repositories", list_repositories),
-            async_choice!("exit", "Exit the program", || std::process::exit(0)),
-        ];
-
-        let choices = Arc::new(Mutex::new(choices));
-
-        async_selection!("Select an option", choices);
+impl From<reqwest::Error> for ScoopError {
+    fn from(error: reqwest::Error) -> Self {
+        ScoopError::Network(error)
     }
 }
 
-fn list_installed_apps() -> Pin<Box<dyn Future<Output = ()> + Send>> {
-    Box::pin(async {
-        let app_manager = APP_MANAGER.lock().await;
-        app_manager.list_installed_apps().await;
-    })
+impl From<io::Error> for ScoopError {
+    fn from(error: io::Error) -> Self {
+        ScoopError::FileIO(error)
+    }
 }
 
-fn search_app() -> Pin<Box<dyn Future<Output = ()> + Send>> {
-    Box::pin(async {
-        let app_manager = APP_MANAGER.lock().await;
-        let query = ask::text(PR1).unwrap();
-        let apps = app_manager.search_apps(&query).await;
-        for app in apps {
-            showln!(yellow_bold, app.name, gray_dim, app.version);
+impl From<serde_json::Error> for ScoopError {
+    fn from(error: serde_json::Error) -> Self {
+        ScoopError::JsonParse(error)
+    }
+}
+
+impl From<zip::result::ZipError> for ScoopError {
+    fn from(error: zip::result::ZipError) -> Self {
+        ScoopError::ZipExtraction(error)
+    }
+}
+
+pub type Result<T> = std::result::Result<T, ScoopError>;
+
+#[derive(Deserialize)]
+pub struct Architecture {
+    pub url: Option<String>,
+    pub hash: Option<String>,
+    pub extract_dir: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct Manifest {
+    pub version: Option<String>,
+    pub description: Option<String>,
+    pub homepage: Option<String>,
+    pub license: Option<String>,
+    pub architecture: HashMap<String, Architecture>,
+    pub bin: Option<Vec<String>>,
+    pub checkver: Option<Checkver>,
+    pub autoupdate: Option<Autoupdate>,
+}
+
+#[derive(Deserialize)]
+pub struct Checkver {
+    pub url: Option<String>,
+    pub jsonpath: Option<String>,
+    pub regex: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct Autoupdate {
+    pub architecture: HashMap<String, AutoupdateArchitecture>,
+}
+
+#[derive(Deserialize)]
+pub struct AutoupdateArchitecture {
+    pub url: Option<String>,
+}
+
+async fn download_file(url: &str, path: &str) -> Result<()> {
+    let response = Client::new().get(url).send().await?;
+    let bytes = response.bytes().await?;
+    let mut file = File::create(path)?;
+    file.write_all(&bytes)?;
+    Ok(())
+}
+
+fn verify_hash(path: &str, expected_hash: &str) -> Result<bool> {
+    let mut file = File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 4096];
+    loop {
+        let n = file.read(&mut buffer)?;
+        if n == 0 {
+            break;
         }
-    })
+        hasher.update(&buffer[..n]);
+    }
+    let hash = hasher.finalize();
+    Ok(hex::encode(hash) == expected_hash)
 }
 
-fn install_app() -> Pin<Box<dyn Future<Output = ()> + Send>> {
-    Box::pin(async {
-        let app_manager = APP_MANAGER.lock().await;
-        let query = ask::text("Enter the name of the application to install").unwrap();
-        let apps = app_manager.search_apps(&query).await;
-        if apps.is_empty() {
-            showln!(red_bold, "No application found with the name ", gray_dim, query);
-            return;
+async fn extract_zip(path: &str, extract_to: &str) -> Result<()> {
+    let file = File::open(path)?;
+    let mut archive = ZipArchive::new(file)?;
+
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i)?;
+        let outpath = Path::new(extract_to).join(file.name());
+
+        if file.name().ends_with('/') {
+            create_dir_all(&outpath).await.unwrap();
+        } else {
+            if let Some(p) = outpath.parent() {
+                if !p.exists() {
+                    create_dir_all(p).await.unwrap();
+                }
+            }
+            let mut outfile = File::create(&outpath)?;
+            io::copy(&mut file, &mut outfile)?;
         }
-        let app = &apps[0];
-        app_manager.install_app(app).await;
-        showln!(green_bold, "Application installed successfully");
-    })
+    }
+    Ok(())
 }
 
-fn uninstall_app() -> Pin<Box<dyn Future<Output = ()> + Send>> {
-    Box::pin(async {
-        let app_manager = APP_MANAGER.lock().await;
-        let query = ask::text("Enter the name of the application to uninstall").unwrap();
-        let apps = app_manager.search_apps(&query).await;
-        if apps.is_empty() {
-            showln!(red_bold, "No application found with the name ", gray_dim, query);
-            return;
+async fn install_package(manifest: &Manifest, arch: &str) -> Result<()> {
+    let architecture = manifest.architecture.get(arch).ok_or(ScoopError::MissingArchitecture)?;
+    let url = architecture.url.as_deref().ok_or(ScoopError::InvalidUrl)?;
+    let hash = architecture.hash.as_deref().ok_or(ScoopError::HashVerification)?;
+    let file_name = Path::new(url).file_name().ok_or(ScoopError::InvalidUrl)?;
+    let download_path = format!("downloads/{}", file_name.to_string_lossy());
+
+    download_file(url, &download_path).await?;
+
+    if !verify_hash(&download_path, hash)? {
+        return Err(ScoopError::HashVerification);
+    }
+
+    let extract_dir = architecture.extract_dir.as_deref().unwrap_or("");
+    extract_zip(&download_path, extract_dir).await?;
+
+    if let Some(description) = &manifest.description {
+        if let Some(version) = &manifest.version {
+            println!("Installed {} version {}", description, version);
         }
-        let app = &apps[0];
-        app_manager.uninstall_app(app).await;
-        showln!(green_bold, "Application uninstalled successfully");
-    })
+    }
+
+    Ok(())
 }
 
-fn update_apps() -> Pin<Box<dyn Future<Output = ()> + Send>> {
-    Box::pin(async {
-        let app_manager = APP_MANAGER.lock().await;
-        app_manager.update_apps().await;
-        showln!(green_bold, "Applications updated successfully");
-    })
-}
-
-fn add_repository() -> Pin<Box<dyn Future<Output = ()> + Send>> {
-    Box::pin(async {
-        let mut app_manager = APP_MANAGER.lock().await;
-        let url = ask::text("Enter the URL of the repository to add").unwrap();
-        app_manager.add_repository(&url).await;
-        showln!(green_bold, "Repository added successfully");
-    })
-}
-
-fn remove_repository() -> Pin<Box<dyn Future<Output = ()> + Send>> {
-    Box::pin(async {
-        let mut app_manager = APP_MANAGER.lock().await;
-        let url = ask::text("Enter the URL of the repository to remove").unwrap();
-        app_manager.remove_repository(&url).await;
-        showln!(green_bold, "Repository removed successfully");
-    })
-}
-
-fn list_repositories() -> Pin<Box<dyn Future<Output = ()> + Send>> {
-    Box::pin(async {
-        let app_manager = APP_MANAGER.lock().await;
-        let repos = app_manager.list_repositories().await;
-        for repo in repos {
-            showln!(yellow_bold, repo.url);
+#[tokio::main]
+async fn main() -> Result<()> {
+    let manifest_data = r#"
+    {
+        "version": "1.39.0",
+        "description": "A new way to see and navigate directory trees",
+        "homepage": "https://dystroy.org/broot/",
+        "license": "MIT",
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/Canop/broot/releases/download/v1.39.0/broot_1.39.0.zip",
+                "hash": "720fa5aa1d7ed54a994b6210ddab32255cf76ca3e18c1bb479d296fd05dc4a92",
+                "extract_dir": "x86_64-pc-windows-gnu"
+            }
+        },
+        "bin": ["broot.exe"],
+        "checkver": {
+            "github": "https://github.com/Canop/broot"
+        },
+        "autoupdate": {
+            "architecture": {
+                "64bit": {
+                    "url": "https://github.com/Canop/broot/releases/download/v$version/broot_$version.zip"
+                }
+            }
         }
-    })
+    }
+    "#;
+
+    let manifest: Manifest = serde_json::from_str(manifest_data)?;
+    install_package(&manifest, "64bit").await?;
+
+    Ok(())
 }
