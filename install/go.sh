@@ -59,6 +59,18 @@ else
     print_colored "wget is already installed." $GREEN
 fi
 
+# Check if tar is installed, if not install it
+print_colored "Checking if tar is installed..." $CYAN
+if ! command_exists tar; then
+    print_colored "tar not found. Installing tar..." $YELLOW
+    run_command apt update && run_command apt-get install tar -y || {
+        print_colored "Failed to install tar. Please check your internet connection." $RED
+        exit 1
+    }
+else
+    print_colored "tar is already installed." $GREEN
+fi
+
 # Get the latest Go version
 print_colored "Fetching the latest Go version..." $CYAN
 GO_VERSION=$(get_latest_go_version) || {
@@ -97,8 +109,10 @@ rm go${GO_VERSION}.linux-amd64.tar.gz || {
 
 # Add Go to PATH
 print_colored "Adding Go to PATH..." $CYAN
-echo "export PATH=\$PATH:/usr/local/go/bin" >> ~/.profile
-source ~/.profile
+if ! grep -q "/usr/local/go/bin" ~/.profile; then
+    echo "export PATH=\$PATH:/usr/local/go/bin" >> ~/.profile
+    source ~/.profile
+fi
 
 # Verify Go installation
 print_colored "Verifying Go installation..." $CYAN
