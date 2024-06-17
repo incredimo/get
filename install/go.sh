@@ -29,7 +29,7 @@ run_command() {
 
 # Function to get the latest Go version
 get_latest_go_version() {
-    wget -qO- https://golang.org/dl/ | grep -oP 'go[0-9.]+\.linux-amd64\.tar\.gz' | head -1 | grep -oP 'go[0-9.]+'
+    wget -qO- https://golang.org/dl/ | grep -oP 'go[0-9.]+\.linux-amd64\.tar\.gz' | head -1 | grep -oP '[0-9.]+'
 }
 
 # Display banner
@@ -81,7 +81,7 @@ print_colored "Latest Go version found: ${GO_VERSION}" $GREEN
 
 # Download Go tarball
 print_colored "Downloading Go ${GO_VERSION} tarball..." $CYAN
-wget https://dl.google.com/go/${GO_VERSION}.linux-amd64.tar.gz || {
+wget https://dl.google.com/go/go${GO_VERSION}.linux-amd64.tar.gz || {
     print_colored "Failed to download Go tarball." $RED
     exit 1
 }
@@ -95,14 +95,14 @@ run_command rm -rf /usr/local/go || {
 
 # Extract Go tarball to /usr/local
 print_colored "Extracting Go tarball to /usr/local..." $CYAN
-run_command tar -C /usr/local -xzf ${GO_VERSION}.linux-amd64.tar.gz || {
+run_command tar -C /usr/local -xzf go${GO_VERSION}.linux-amd64.tar.gz || {
     print_colored "Failed to extract Go tarball." $RED
     exit 1
 }
 
 # Cleanup downloaded tarball
 print_colored "Cleaning up downloaded tarball..." $CYAN
-rm ${GO_VERSION}.linux-amd64.tar.gz || {
+rm go${GO_VERSION}.linux-amd64.tar.gz || {
     print_colored "Failed to remove downloaded tarball." $RED
     exit 1
 }
@@ -123,5 +123,3 @@ else
     print_colored "Go installation verification failed." $RED
     exit 1
 fi
-
-
