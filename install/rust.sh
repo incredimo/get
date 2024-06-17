@@ -124,4 +124,40 @@ else
     exit 1
 fi
 
+# Install Rust on Debian
 
+# Check if curl is installed, if not install it
+print_colored "Checking if curl is installed..." $CYAN
+if ! command_exists curl; then
+    print_colored "curl not found. Installing curl..." $YELLOW
+    run_command apt update && run_command apt-get install curl -y || {
+        print_colored "Failed to install curl. Please check your internet connection." $RED
+        exit 1
+    }
+else
+    print_colored "curl is already installed." $GREEN
+fi
+
+# Download and run Rust installation script
+print_colored "Downloading and running Rust installation script..." $CYAN
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y || {
+    print_colored "Failed to download and run Rust installation script." $RED
+    exit 1
+}
+
+# Source the environment variables
+print_colored "Sourcing environment variables..." $CYAN
+source $HOME/.cargo/env || {
+    print_colored "Failed to source environment variables." $RED
+    exit 1
+}
+
+# Verify Rust installation
+print_colored "Verifying Rust installation..." $CYAN
+if command_exists rustc; then
+    print_colored "Rust has been successfully installed." $GREEN
+    rustc --version
+else
+    print_colored "Rust installation verification failed." $RED
+    exit 1
+fi
