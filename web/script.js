@@ -10,7 +10,7 @@ const preload = () => {
 	};
 
 	const loader = new THREE.FontLoader(manager);
-	const font = loader.load('web/assets/Saira Medium_Regular.json', function (font) {
+	const font = loader.load('web/assets/Overpass Mono_Bold.json', function (font) {
 	  typo = font;
 	});
 
