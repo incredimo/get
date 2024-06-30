@@ -10,7 +10,7 @@ const preload = () => {
 	};
 
 	const loader = new THREE.FontLoader(manager);
-	const font = loader.load('https://res.cloudinary.com/dydre7amr/raw/upload/v1612950355/font_zsd4dr.json', function (font) {
+	const font = loader.load('web/assets/Saira Medium_Regular.json', function (font) {
 	  typo = font;
 	});
 
