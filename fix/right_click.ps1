@@ -82,12 +82,12 @@ MODIFYING RIGHT-CLICK CONTEXT MENU
 
 # Paths to remove from the context menu
 $pathsToRemove = @(
-    "HKCR:\*\shell\Open with Visual Studio",
-    "HKCR:\*\shell\Open Git GUI here",
-    "HKCR:\*\shell\Open Git Bash here",
-    "HKCR:\Directory\Background\shell\Open with Visual Studio",
-    "HKCR:\Directory\Background\shell\Open Git GUI here",
-    "HKCR:\Directory\Background\shell\Open Git Bash here"
+    "HKEY_CLASSES_ROOT\*\shell\Open with Visual Studio",
+    "HKEY_CLASSES_ROOT\*\shell\Open Git GUI here",
+    "HKEY_CLASSES_ROOT\*\shell\Open Git Bash here",
+    "HKEY_CLASSES_ROOT\Directory\Background\shell\Open with Visual Studio",
+    "HKEY_CLASSES_ROOT\Directory\Background\shell\Open Git GUI here",
+    "HKEY_CLASSES_ROOT\Directory\Background\shell\Open Git Bash here"
 )
 
 # Remove the specified context menu items
@@ -106,8 +106,8 @@ if (Test-Path $vsCodeExecutable) {
     Print-Colored "Visual Studio Code found at $vsCodeExecutable" $CYAN
 
     # Define the path to the new context menu item
-    $vsCodePathFile = "HKCR:\*\shell\Open with VS Code"
-    $vsCodePathDir = "HKCR:\Directory\Background\shell\Open with VS Code"
+    $vsCodePathFile = "HKEY_CLASSES_ROOT\*\shell\Open with VS Code"
+    $vsCodePathDir = "HKEY_CLASSES_ROOT\Directory\Background\shell\Open with VS Code"
 
     # Add "Open with VS Code" for files and directories
     Add-VSCodeContextMenu -RegistryPath $vsCodePathFile -Command "`"$vsCodeExecutable`" `"%1`""
