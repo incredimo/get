@@ -1,1 +1,2 @@
 repos = ["./sample.json"]
+download_dir = "C:\\Users\\nobody\\Downloads"

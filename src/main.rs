@@ -21,31 +21,35 @@ use duct::cmd;
 ///! get also has a `get update` command that updates all the installed applications.
 ///! get also has a `get uninstall <app-name>` command that uninstalls the application.
 use serde::{Deserialize, Serialize};
-use url::Url;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::fs;
 use std::io::{Write, Read};
 use std::process::Command;
 use reqwest;
-use tempfile::tempdir;
 use zip;
 use std::env;
 use std::thread;
 use std::time::Duration;
 use regex::Regex;
-
+use url::Url;
+use indicatif::{ProgressBar, ProgressStyle};
+use colored::*;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Config {
     pub repos: Vec<String>,
+    pub download_dir: PathBuf,
 }
 
 impl Config {
     pub fn new() -> Self {
-        Config { repos: vec!["https://example.com/default-repo.json".to_string()] }
+        Config {
+            repos: vec!["https://example.com/default-repo.json".to_string()],
+            download_dir: PathBuf::from("downloads"),
+        }
     }
 
     pub fn load() -> Result<Self> {
@@ -94,9 +98,8 @@ pub struct App {
     pub version: String,
     pub platform: String,
     pub architecture: String,
-    pub edition: Option<String>,
-    pub install_steps: Vec<StepWrapper>,
-    pub uninstall_steps: Vec<StepWrapper>,
+    pub install_steps: Vec<Step>,
+    pub uninstall_steps: Vec<Step>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -106,31 +109,12 @@ pub enum Step {
     Extract { source: String, target: String },
     Run { command: String, args: Vec<String> },
     Copy { source: String, target: String },
-    Move { source: String, target: String },
     Delete { target: String },
     CreateDir { target: String },
-    RemoveDir { target: String },
-    Condition { condition: String, steps: Vec<StepWrapper> },
-    Variable { name: String, value: String },
-    Set { name: String, value: String },
-    Unset { name: String },
-    If { condition: String, steps: Vec<StepWrapper>, else_steps: Vec<StepWrapper> },
-    For { variable: String, values: Vec<String>, steps: Vec<StepWrapper> },
-    Include { file: String },
-    Comment { text: String },
-    Sleep { duration: u64 },
     SetEnv { name: String, value: String },
     UnsetEnv { name: String },
     SetRegistry { key: String, value: String },
     RemoveRegistry { key: String },
-    JavaScript { code: String },
-    Shell { script: String },
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct StepWrapper {
-    #[serde(flatten)]
-    pub step: Step,
 }
 
 #[derive(Debug, Clone)]
@@ -138,7 +122,6 @@ pub struct Get {
     config: Config,
     repos: Vec<Repository>,
     installed_apps: HashMap<String, App>,
-    variables: HashMap<String, String>,
 }
 
 impl Get {
@@ -146,7 +129,7 @@ impl Get {
         let config = Config::load()?;
         let repos = config.repos.iter().map(|url| Repository::new(url, None)).collect();
         let installed_apps = Self::load_installed_apps()?;
-        Ok(Get { config, repos, installed_apps, variables: HashMap::new() })
+        Ok(Get { config, repos, installed_apps })
     }
 
     fn load_installed_apps() -> Result<HashMap<String, App>> {
@@ -177,11 +160,9 @@ impl Get {
 
     fn get_apps_from_repo(&self, repo_url: &str) -> Result<Vec<App>> {
         if Url::parse(repo_url).is_ok() {
-            // Remote repository
             let repo_apps: Vec<App> = reqwest::blocking::get(repo_url)?.json()?;
             Ok(repo_apps)
         } else {
-            // Local repository
             let path = PathBuf::from(repo_url);
             let file = fs::File::open(path)?;
             let repo_apps: Vec<App> = serde_json::from_reader(file)?;
@@ -195,11 +176,23 @@ impl Get {
             .next()
             .ok_or("App not found")?;
 
-        let temp_dir = tempdir()?;
+        println!("{}", format!("Installing {}...", app.name).green().bold());
 
-        for step in &app.install_steps {
-            self.execute_step(step, temp_dir.path())?;
+        let pb = ProgressBar::new(app.install_steps.len() as u64);
+        pb.set_style(ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] {bar:40.cyan/blue} {pos}/{len} {msg}")
+            .unwrap()
+            .progress_chars("#>-"));
+
+        for (index, step) in app.install_steps.iter().enumerate() {
+            let step_name = self.get_step_name(step);
+            pb.set_message(format!("Step {}: {}", index + 1, step_name));
+            self.execute_step(step)?;
+            pb.inc(1);
+            thread::sleep(Duration::from_millis(100));
         }
+
+        pb.finish_with_message(format!("{} installed successfully", app.name));
 
         self.installed_apps.insert(app.identifier.clone(), app);
         self.save_installed_apps()?;
@@ -208,50 +201,57 @@ impl Get {
 
     pub fn uninstall(&mut self, app_name: &str) -> Result<()> {
         let app = self.installed_apps.remove(app_name).ok_or("App not installed")?;
-        
-        let temp_dir = tempdir()?;
 
-        for step in &app.uninstall_steps {
-            self.execute_step(step, temp_dir.path())?;
+        println!("{}", format!("Uninstalling {}...", app.name).red().bold());
+
+        let pb = ProgressBar::new(app.uninstall_steps.len() as u64);
+        pb.set_style(ProgressStyle::default_bar()
+            .template("{spinner:.red} [{elapsed_precise}] {bar:40.cyan/blue} {pos}/{len} {msg}")
+            .unwrap()
+            .progress_chars("#>-"));
+
+        for (index, step) in app.uninstall_steps.iter().enumerate() {
+            let step_name = self.get_step_name(step);
+            pb.set_message(format!("Step {}: {}", index + 1, step_name));
+            self.execute_step(step)?;
+            pb.inc(1);
+            thread::sleep(Duration::from_millis(100));
         }
+
+        pb.finish_with_message(format!("{} uninstalled successfully", app.name));
 
         self.save_installed_apps()?;
         Ok(())
     }
 
-    fn execute_step(&mut self, step: &StepWrapper, temp_dir: &Path) -> Result<()> {
-        match &step.step {
+    fn execute_step(&self, step: &Step) -> Result<()> {
+        match step {
             Step::Download { url, target } => {
-                let target_path = temp_dir.join(target);
+                let target_path = self.config.download_dir.join(target);
                 let mut response = reqwest::blocking::get(url)?;
                 let mut file = fs::File::create(target_path)?;
                 response.copy_to(&mut file)?;
             }
             Step::Extract { source, target } => {
-                let source_path = temp_dir.join(source);
-                let target_path = temp_dir.join(target);
+                let source_path = self.config.download_dir.join(source);
+                let target_path = PathBuf::from(target);
                 let file = fs::File::open(source_path)?;
                 let mut archive = zip::ZipArchive::new(file)?;
                 archive.extract(target_path)?;
             }
             Step::Run { command, args } => {
                 Command::new(command)
+                .current_dir(&self.config.download_dir)
                     .args(args)
-                    .current_dir(temp_dir)
                     .output()?;
             }
             Step::Copy { source, target } => {
-                let source_path = temp_dir.join(source);
-                let target_path = Path::new(target);
+                let source_path = self.config.download_dir.join(source);
+                let target_path = PathBuf::from(target);
                 fs::copy(source_path, target_path)?;
             }
-            Step::Move { source, target } => {
-                let source_path = temp_dir.join(source);
-                let target_path = Path::new(target);
-                fs::rename(source_path, target_path)?;
-            }
             Step::Delete { target } => {
-                let target_path = Path::new(target);
+                let target_path = PathBuf::from(target);
                 if target_path.is_file() {
                     fs::remove_file(target_path)?;
                 } else if target_path.is_dir() {
@@ -261,96 +261,29 @@ impl Get {
             Step::CreateDir { target } => {
                 fs::create_dir_all(target)?;
             }
-            Step::RemoveDir { target } => {
-                fs::remove_dir_all(target)?;
-            }
-            Step::Condition { condition, steps } => {
-                if self.evaluate_condition(condition)? {
-                    for step in steps {
-                        self.execute_step(step, temp_dir)?;
-                    }
-                }
-            }
-            Step::Variable { name, value } => {
-                self.variables.insert(name.clone(), value.clone());
-            }
-            Step::Set { name, value } => {
-                self.variables.insert(name.clone(), value.clone());
-            }
-            Step::Unset { name } => {
-                self.variables.remove(name);
-            }
-            Step::If { condition, steps, else_steps } => {
-                if self.evaluate_condition(condition)? {
-                    for step in steps {
-                        self.execute_step(step, temp_dir)?;
-                    }
-                } else {
-                    for step in else_steps {
-                        self.execute_step(step, temp_dir)?;
-                    }
-                }
-            }
-            Step::For { variable, values, steps } => {
-                for value in values {
-                    self.variables.insert(variable.clone(), value.clone());
-                    for step in steps {
-                        self.execute_step(step, temp_dir)?;
-                    }
-                }
-            }
-            Step::Include { file } => {
-                let included_steps: Vec<StepWrapper> = serde_json::from_str(&fs::read_to_string(file)?)?;
-                for step in included_steps {
-                    self.execute_step(&step, temp_dir)?;
-                }
-            }
-            Step::Comment { text: _ } => {
-                // Do nothing for comments
-            }
-            Step::Sleep { duration } => {
-                thread::sleep(Duration::from_secs(*duration));
-            }
             Step::SetEnv { name, value } => {
                 env::set_var(name, value);
             }
             Step::UnsetEnv { name } => {
                 env::remove_var(name);
-            }
-            Step::SetRegistry { key, value } => {
-                // Note: This is a simplified version. Real implementation would use Windows API.
-                println!("Setting registry key {} to {}", key, value);
-            }
-            Step::RemoveRegistry { key } => {
-                // Note: This is a simplified version. Real implementation would use Windows API.
-                println!("Removing registry key {}", key);
-            }
-            Step::JavaScript { code } => {
-                // Using deno for JavaScript execution
-                let output = cmd!("deno", "eval", code).read()?;
-                println!("JavaScript output: {}", output);
-            }
-            Step::Shell { script } => {
-                let output = if cfg!(target_os = "windows") {
-                    cmd!("cmd", "/C", script).read()?
-                } else {
-                    cmd!("sh", "-c", script).read()?
-                };
-                println!("Shell script output: {}", output);
-            }
+            } 
+            _ => {}
         }
         Ok(())
     }
 
-    fn evaluate_condition(&self, condition: &str) -> Result<bool> {
-        let re = Regex::new(r"\$\{([^}]+)\}")?;
-        let expanded_condition = re.replace_all(condition, |caps: &regex::Captures| {
-            self.variables.get(&caps[1]).cloned().unwrap_or_default()
-        });
-        
-        // This is a simplified condition evaluator. In a real-world scenario,
-        // you'd want to use a proper expression evaluator.
-        Ok(expanded_condition == "true")
+    fn get_step_name(&self, step: &Step) -> String {
+        match step {
+            Step::Download { .. } => "Downloading".to_string(),
+            Step::Extract { .. } => "Extracting".to_string(),
+            Step::Run { .. } => "Running command".to_string(),
+            Step::Copy { .. } => "Copying files".to_string(),
+            Step::Delete { .. } => "Deleting files".to_string(),
+            Step::CreateDir { .. } => "Creating directory".to_string(),
+            Step::SetEnv { .. } => "Setting environment variable".to_string(),
+            Step::UnsetEnv { .. } => "Unsetting environment variable".to_string(),
+            _ => "unimplemented function".to_string(),
+        }
     }
 
     pub fn list(&self) -> Vec<&App> {
@@ -358,18 +291,32 @@ impl Get {
     }
 
     pub fn update(&mut self) -> Result<()> {
-        for app in self.clone().installed_apps.values() {
-            let latest_version = self.clone().search(&app.name)?
-                .into_iter()
-                .next()
-                .ok_or("App not found in repositories")?;
-            
-            if latest_version.version != app.version {
-                println!("Updating {} from {} to {}", app.name, app.version, latest_version.version);
-                self.uninstall(&app.identifier)?;
-                self.install(&latest_version.name)?;
+        println!("{}", "Checking for updates...".cyan().bold());
+        let cloned_self = self.clone();
+        let pb = ProgressBar::new(cloned_self.installed_apps.len() as u64);
+        pb.set_style(ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] {bar:40.cyan/blue} {pos}/{len} {msg}")
+            .unwrap()
+            .progress_chars("#>-"));
+
+        for app in cloned_self.installed_apps.values() {
+            pb.set_message(format!("Checking {}", app.name));
+            match self.search(&app.name) {
+                Ok(search_results) => {
+                    if let Some(latest_version) = search_results.into_iter().next() {
+                        if latest_version.version != app.version {
+                            println!("{}", format!("Updating {} from {} to {}", app.name, app.version, latest_version.version).yellow());
+                            self.uninstall(&app.identifier)?;
+                            self.install(&latest_version.name)?;
+                        }
+                    }
+                },
+                Err(e) => eprintln!("{}", format!("Error checking for updates for {}: {}", app.name, e).red()),
             }
+            pb.inc(1);
         }
+
+        pb.finish_with_message("Update check completed");
         Ok(())
     }
 
@@ -378,6 +325,7 @@ impl Get {
         self.repos.push(repo);
         self.config.repos.push(url.to_string());
         self.config.save()?;
+        println!("{}", format!("Added repository: {}", url).green());
         Ok(())
     }
 
@@ -385,6 +333,7 @@ impl Get {
         self.repos.retain(|r| r.url != url);
         self.config.repos.retain(|r| r != url);
         self.config.save()?;
+        println!("{}", format!("Removed repository: {}", url).yellow());
         Ok(())
     }
 }
@@ -395,78 +344,77 @@ fn main() -> Result<()> {
     match std::env::args().nth(1).as_deref() {
         Some("search") => {
             let app_name = std::env::args().nth(2).expect("Provide an app name");
-            println!("Searching for {}", app_name);
+            println!("{}", format!("Searching for {}...", app_name).cyan().bold());
             match get.search(&app_name) {
                 Ok(apps) => {
                     if apps.is_empty() {
-                        println!("No applications found matching '{}'", app_name);
+                        println!("{}", "No applications found.".yellow());
                     } else {
                         for app in apps {
-                            println!("{} ({}): {}", app.name, app.version, app.description.as_deref().unwrap_or(""));
+                            println!("{} ({}):\n    {}", 
+                                app.name.green().bold(), 
+                                app.version.blue(),
+                                app.description.as_deref().unwrap_or("No description available").italic()
+                            );
                         }
                     }
                 },
-                Err(e) => eprintln!("Error searching for applications: {}", e),
+                Err(e) => eprintln!("{}", format!("Error searching for applications: {}", e).red()),
             }
         }
         Some("install") => {
             let app_name = std::env::args().nth(2).expect("Provide an app name");
-            println!("Installing {}", app_name);
             match get.install(&app_name) {
-                Ok(_) => println!("{} installed successfully", app_name),
-                Err(e) => eprintln!("Error installing {}: {}", app_name, e),
+                Ok(_) => println!("{}", format!("{} installed successfully", app_name).green().bold()),
+                Err(e) => eprintln!("{}", format!("Error installing {}: {}", app_name, e).red()),
             }
         }
         Some("uninstall") => {
             let app_name = std::env::args().nth(2).expect("Provide an app name");
-            println!("Uninstalling {}", app_name);
             match get.uninstall(&app_name) {
-                Ok(_) => println!("{} uninstalled successfully", app_name),
-                Err(e) => eprintln!("Error uninstalling {}: {}", app_name, e),
+                Ok(_) => println!("{}", format!("{} uninstalled successfully", app_name).green().bold()),
+                Err(e) => eprintln!("{}", format!("Error uninstalling {}: {}", app_name, e).red()),
             }
         }
         Some("list") => {
-            println!("Installed applications:");
+            println!("{}", "Installed applications:".cyan().bold());
             for app in get.list() {
-                println!("{} ({}): {}", app.name, app.version, app.description.as_deref().unwrap_or(""));
+                println!("{} ({})", app.name.green(), app.version.blue());
             }
         }
         Some("update") => {
-            println!("Updating installed applications");
             match get.update() {
-                Ok(_) => println!("Applications updated successfully"),
-                Err(e) => eprintln!("Error updating applications: {}", e),
+                Ok(_) => println!("{}", "All applications updated successfully".green().bold()),
+                Err(e) => eprintln!("{}", format!("Error updating applications: {}", e).red()),
             }
         }
         Some("add") => {
-            let repo_url = std::env::args().nth(2).expect("Provide a repo URL");
-            println!("Adding repo {}", repo_url);
-            match get.add_repo(&repo_url, None) {
-                Ok(_) => println!("Repo added successfully"),
-                Err(e) => eprintln!("Error adding repo: {}", e),
+            let url = std::env::args().nth(2).expect("Provide a repo URL");
+            let description = std::env::args().nth(3);
+            match get.add_repo(&url, description.as_deref()) {
+                Ok(_) => println!("{}", format!("Repository {} added successfully", url).green().bold()),
+                Err(e) => eprintln!("{}", format!("Error adding repository {}: {}", url, e).red()),
             }
         }
         Some("remove") => {
-            let repo_url = std::env::args().nth(2).expect("Provide a repo URL");
-            println!("Removing repo {}", repo_url);
-            match get.remove_repo(&repo_url) {
-                Ok(_) => println!("Repo removed successfully"),
-                Err(e) => eprintln!("Error removing repo: {}", e),
+            let url = std::env::args().nth(2).expect("Provide a repo URL");
+            match get.remove_repo(&url) {
+                Ok(_) => println!("{}", format!("Repository {} removed successfully", url).green().bold()),
+                Err(e) => eprintln!("{}", format!("Error removing repository {}: {}", url, e).red()),
             }
         }
         _ => {
-            println!("Usage: get <command>");
-            println!("Commands:");
-            println!("  search <app-name> - Search for an application");
-            println!("  install <app-name> - Install an application");
-            println!("  uninstall <app-name> - Uninstall an application");
-            println!("  list - List installed applications");
-            println!("  update - Update installed applications");
-            println!("  add <repo-url> - Add a repository");
-            println!("  remove <repo-url> - Remove a repository");
+            println!("{}", "Usage: get <command> [args]".cyan());
+            println!("{}", "Commands:".yellow());
+            println!("  search <app-name>     : Search for an application");
+            println!("  install <app-name>    : Install an application");
+            println!("  uninstall <app-name>  : Uninstall an application");
+            println!("  list                  : List installed applications");
+            println!("  update                : Update all installed applications");
+            println!("  add <repo-url> [desc] : Add a repository");
+            println!("  remove <repo-url>     : Remove a repository");
         }
-    };
+    }
 
     Ok(())
-
 }

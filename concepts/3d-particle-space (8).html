@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Rotatable Space Particle Animation</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overflow: hidden;
+            background-color: #000;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="particleCanvas"></canvas>
+    <script>
+        const canvas = document.getElementById('particleCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let width = canvas.width = window.innerWidth;
+        let height = canvas.height = window.innerHeight;
+
+        const particles = [];
+        const particleCount = 5000;
+        let speed = 0;
+        let colorIntensity = 0;
+        let currentColor = [255, 255, 255];
+        let targetColor = [255, 255, 255];
+
+        let rotationX = 0;
+        let rotationY = 0;
+        let isDragging = false;
+        let lastMouseX, lastMouseY;
+
+        function randomColor() {
+            return [
+                Math.floor(Math.random() * 256),
+                Math.floor(Math.random() * 256),
+                Math.floor(Math.random() * 256)
+            ];
+        }
+
+        class Particle {
+            constructor() {
+                this.reset();
+            }
+
+            reset() {
+                const phi = Math.random() * Math.PI * 2;
+                const costheta = Math.random() * 2 - 1;
+                const u = Math.random();
+
+                const theta = Math.acos(costheta);
+                const r = 1000 * Math.cbrt(u);
+
+                this.x = r * Math.sin(theta) * Math.cos(phi);
+                this.y = r * Math.sin(theta) * Math.sin(phi);
+                this.z = r * Math.cos(theta);
+                
+                this.radius = Math.random() * 1.5 + 0.5;
+                this.brightness = Math.random() * 0.5 + 0.5;
+            }
+
+            rotate(ax, ay) {
+                const cosX = Math.cos(ax);
+                const sinX = Math.sin(ax);
+                const cosY = Math.cos(ay);
+                const sinY = Math.sin(ay);
+
+                const x = this.x;
+                const y = this.y;
+                const z = this.z;
+
+                // Rotation around X-axis
+                const ry = y * cosX - z * sinX;
+                const rz = y * sinX + z * cosX;
+
+                // Rotation around Y-axis
+                this.x = x * cosY + rz * sinY;
+                this.y = ry;
+                this.z = -x * sinY + rz * cosY;
+            }
+
+            update() {
+                this.z -= speed;
+                if (this.z < 1 || this.z > 2000) {
+                    this.reset();
+                }
+            }
+
+            draw() {
+                const scale = 1000 / (this.z + 1000);
+                const x = this.x * scale + width / 2;
+                const y = this.y * scale + height / 2;
+                const r = this.radius * scale;
+
+                const alpha = (1 - this.z / 2000) * this.brightness;
+
+                ctx.beginPath();
+                ctx.arc(x, y, r, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(${currentColor[0]}, ${currentColor[1]}, ${currentColor[2]}, ${alpha})`;
+                ctx.fill();
+            }
+        }
+
+        function init() {
+            for (let i = 0; i < particleCount; i++) {
+                particles.push(new Particle());
+            }
+        }
+
+        function lerpColor(a, b, t) {
+            return [
+                a[0] + (b[0] - a[0]) * t,
+                a[1] + (b[1] - a[1]) * t,
+                a[2] + (b[2] - a[2]) * t
+            ].map(Math.round);
+        }
+
+        function animate() {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+            ctx.fillRect(0, 0, width, height);
+
+            currentColor = lerpColor(currentColor, targetColor, 0.05);
+
+            particles.forEach(particle => {
+                particle.rotate(rotationX, rotationY);
+                particle.update();
+                particle.draw();
+            });
+
+            rotationX *= 0.95;
+            rotationY *= 0.95;
+            speed *= 0.95;
+            colorIntensity *= 0.95;
+
+            if (colorIntensity < 0.01) {
+                targetColor = [255, 255, 255];
+            }
+
+            requestAnimationFrame(animate);
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            lastMouseX = e.clientX;
+            lastMouseY = e.clientY;
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (isDragging) {
+                const deltaX = e.clientX - lastMouseX;
+                const deltaY = e.clientY - lastMouseY;
+                rotationY += deltaX * 0.005;
+                rotationX += deltaY * 0.005;
+                lastMouseX = e.clientX;
+                lastMouseY = e.clientY;
+            }
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            isDragging = false;
+        });
+
+        canvas.addEventListener('mouseleave', () => {
+            isDragging = false;
+        });
+
+        window.addEventListener('resize', () => {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        });
+
+        window.addEventListener('wheel', (e) => {
+            speed += e.deltaY * 0.02;
+            speed = Math.max(-20, Math.min(speed, 20));
+            colorIntensity = Math.min(1, Math.abs(speed) / 10);
+            
+            if (colorIntensity > 0.5) {
+                targetColor = randomColor();
+            }
+            
+            e.preventDefault();
+        }, { passive: false });
+
+        init();
+        animate();
+    </script>
+</body>
+</html>

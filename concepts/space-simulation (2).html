@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Space with Persistent Shapes and Smooth Fading</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overflow: hidden;
+            background-color: #000;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="spaceCanvas"></canvas>
+    <script>
+        const canvas = document.getElementById('spaceCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let width = canvas.width = window.innerWidth;
+        let height = canvas.height = window.innerHeight;
+
+        const particles = [];
+        const shapes = [];
+        const particleCount = 3000;
+        const shapeCount = 50;
+        let speed = 0;
+        const maxSpeed = 30;
+        const speedIncrement = 0.5;
+
+        let cameraZ = 0;
+        let rotationX = 0;
+        let rotationY = 0;
+        let targetRotationX = 0;
+        let targetRotationY = 0;
+        const rotationSpeed = 0.05;
+        const maxRotationSpeed = 0.02;
+        let isDragging = false;
+        let lastMouseX, lastMouseY;
+
+        const nearClippingPlane = 100;
+        const farClippingPlane = 3000;
+        const fadeDistance = 500;
+
+        class Particle {
+            constructor() {
+                this.reset();
+            }
+
+            reset() {
+                const phi = Math.random() * Math.PI * 2;
+                const costheta = Math.random() * 2 - 1;
+                const u = Math.random();
+
+                const theta = Math.acos(costheta);
+                const r = 2000 * Math.cbrt(u);
+
+                this.x = r * Math.sin(theta) * Math.cos(phi);
+                this.y = r * Math.sin(theta) * Math.sin(phi);
+                this.z = r * Math.cos(theta);
+                
+                this.radius = Math.random() * 1.5 + 0.5;
+                this.brightness = Math.random() * 0.5 + 0.5;
+            }
+
+            update() {
+                // Particles now move relative to the camera
+                let relativeZ = this.z - cameraZ;
+                if (relativeZ < -1000 || relativeZ > 3000) {
+                    this.reset();
+                    this.z += cameraZ; // Adjust for camera position
+                }
+            }
+
+            draw() {
+                let relativeZ = this.z - cameraZ;
+                const scale = 1000 / (relativeZ + 1000);
+                const x = this.x * scale + width / 2;
+                const y = this.y * scale + height / 2;
+                const r = Math.max(0.1, this.radius * scale);
+
+                if (x < -100 || x > width + 100 || y < -100 || y > height + 100) {
+                    return;
+                }
+
+                let opacity = this.brightness * (1 - relativeZ / 3000);
+                opacity *= this.getFadeOpacity(relativeZ);
+
+                ctx.beginPath();
+                ctx.arc(x, y, r, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(255, 255, 255, ${Math.max(0, Math.min(1, opacity))})`;
+                ctx.fill();
+            }
+
+            getFadeOpacity(relativeZ) {
+                if (relativeZ < nearClippingPlane) {
+                    return Math.max(0, (relativeZ - (nearClippingPlane - fadeDistance)) / fadeDistance);
+                } else if (relativeZ > farClippingPlane - fadeDistance) {
+                    return Math.max(0, (farClippingPlane - relativeZ) / fadeDistance);
+                }
+                return 1;
+            }
+        }
+
+        class Shape {
+            constructor() {
+                this.init();
+            }
+
+            init() {
+                this.x = (Math.random() - 0.5) * 4000;
+                this.y = (Math.random() - 0.5) * 4000;
+                this.z = (Math.random() - 0.5) * 4000;
+                this.size = Math.random() * 100 + 50;
+                this.type = Math.floor(Math.random() * 3);
+                this.color = `hsl(${Math.random() * 360}, 70%, 50%)`;
+            }
+
+            update() {
+                // Shapes don't move, they're fixed in space
+            }
+
+            draw() {
+                let relativeZ = this.z - cameraZ;
+                const scale = 1000 / (relativeZ + 1000);
+                const x = this.x * scale + width / 2;
+                const y = this.y * scale + height / 2;
+                const size = Math.max(0.1, this.size * scale);
+
+                if (x < -size || x > width + size || y < -size || y > height + size) {
+                    return;
+                }
+
+                let opacity = this.getFadeOpacity(relativeZ);
+                ctx.strokeStyle = this.color.replace(')', `, ${opacity})`).replace('rgb', 'rgba');
+                ctx.lineWidth = 2 * opacity;
+
+                switch (this.type) {
+                    case 0:
+                        ctx.strokeRect(x - size/2, y - size/2, size, size);
+                        break;
+                    case 1:
+                        ctx.beginPath();
+                        ctx.arc(x, y, size/2, 0, Math.PI * 2);
+                        ctx.stroke();
+                        break;
+                    case 2:
+                        ctx.beginPath();
+                        ctx.moveTo(x, y - size/2);
+                        ctx.lineTo(x - size/2, y + size/2);
+                        ctx.lineTo(x + size/2, y + size/2);
+                        ctx.closePath();
+                        ctx.stroke();
+                        break;
+                }
+            }
+
+            getFadeOpacity(relativeZ) {
+                if (relativeZ < nearClippingPlane) {
+                    return Math.max(0, (relativeZ - (nearClippingPlane - fadeDistance)) / fadeDistance);
+                } else if (relativeZ > farClippingPlane - fadeDistance) {
+                    return Math.max(0, (farClippingPlane - relativeZ) / fadeDistance);
+                }
+                return 1;
+            }
+        }
+
+        function rotatePoint(x, y, z, ax, ay) {
+            let rx, ry, rz;
+
+            ry = y * Math.cos(ax) - z * Math.sin(ax);
+            rz = y * Math.sin(ax) + z * Math.cos(ax);
+
+            rx = x * Math.cos(ay) + rz * Math.sin(ay);
+            z = -x * Math.sin(ay) + rz * Math.cos(ay);
+
+            return {x: rx, y: ry, z: z};
+        }
+
+        function init() {
+            for (let i = 0; i < particleCount; i++) {
+                particles.push(new Particle());
+            }
+            for (let i = 0; i < shapeCount; i++) {
+                shapes.push(new Shape());
+            }
+        }
+
+        function animate() {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+            ctx.fillRect(0, 0, width, height);
+
+            rotationX += (targetRotationX - rotationX) * rotationSpeed;
+            rotationY += (targetRotationY - rotationY) * rotationSpeed;
+
+            cameraZ += speed;
+
+            [...particles, ...shapes].forEach(object => {
+                let rotated = rotatePoint(object.x, object.y, object.z - cameraZ, rotationX, rotationY);
+                object.x = rotated.x;
+                object.y = rotated.y;
+                object.z = rotated.z + cameraZ;
+                object.update();
+                object.draw();
+            });
+
+            targetRotationX *= 0.95;
+            targetRotationY *= 0.95;
+            speed *= 0.98;
+
+            requestAnimationFrame(animate);
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            lastMouseX = e.clientX;
+            lastMouseY = e.clientY;
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (isDragging) {
+                const deltaX = e.clientX - lastMouseX;
+                const deltaY = e.clientY - lastMouseY;
+                
+                targetRotationY += Math.max(-maxRotationSpeed, Math.min(maxRotationSpeed, deltaX * 0.001));
+                targetRotationX += Math.max(-maxRotationSpeed, Math.min(maxRotationSpeed, deltaY * 0.001));
+                
+                lastMouseX = e.clientX;
+                lastMouseY = e.clientY;
+            }
+        });
+
+        canvas.addEventListener('mouseup', () => isDragging = false);
+        canvas.addEventListener('mouseleave', () => isDragging = false);
+
+        window.addEventListener('resize', () => {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        });
+
+        window.addEventListener('wheel', (e) => {
+            speed += Math.sign(e.deltaY) * speedIncrement;
+            speed = Math.max(-maxSpeed, Math.min(speed, maxSpeed));
+            e.preventDefault();
+        }, { passive: false });
+
+        init();
+        animate();
+    </script>
+</body>
+</html>

@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Robust 3D Rotatable Space with Geometric Shapes</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overflow: hidden;
+            background-color: #000;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="spaceCanvas"></canvas>
+    <script>
+        const canvas = document.getElementById('spaceCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let width = canvas.width = window.innerWidth;
+        let height = canvas.height = window.innerHeight;
+
+        const particles = [];
+        const shapes = [];
+        const particleCount = 3000;
+        const shapeCount = 10;
+        let speed = 0;
+
+        let rotationX = 0;
+        let rotationY = 0;
+        let isDragging = false;
+        let lastMouseX, lastMouseY;
+
+        class Particle {
+            constructor() {
+                this.reset();
+            }
+
+            reset() {
+                const phi = Math.random() * Math.PI * 2;
+                const costheta = Math.random() * 2 - 1;
+                const u = Math.random();
+
+                const theta = Math.acos(costheta);
+                const r = 2000 * Math.cbrt(u);
+
+                this.x = r * Math.sin(theta) * Math.cos(phi);
+                this.y = r * Math.sin(theta) * Math.sin(phi);
+                this.z = r * Math.cos(theta);
+                
+                this.radius = Math.random() * 1.5 + 0.5;
+                this.brightness = Math.random() * 0.5 + 0.5;
+            }
+
+            update() {
+                this.z -= speed;
+                if (this.z < -1000 || this.z > 3000) {
+                    this.reset();
+                }
+            }
+
+            draw() {
+                const scale = 1000 / (this.z + 1000);
+                const x = this.x * scale + width / 2;
+                const y = this.y * scale + height / 2;
+                const r = Math.max(0.1, this.radius * scale); // Ensure radius is always positive
+
+                if (x < -100 || x > width + 100 || y < -100 || y > height + 100) {
+                    return; // Don't render if outside visible area (with some margin)
+                }
+
+                ctx.beginPath();
+                ctx.arc(x, y, r, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(255, 255, 255, ${Math.max(0, Math.min(1, this.brightness * (1 - this.z / 3000)))})`;
+                ctx.fill();
+            }
+        }
+
+        class Shape {
+            constructor() {
+                this.reset();
+            }
+
+            reset() {
+                this.x = (Math.random() - 0.5) * 2000;
+                this.y = (Math.random() - 0.5) * 2000;
+                this.z = Math.random() * 4000 - 1000;
+                this.size = Math.random() * 100 + 50;
+                this.type = Math.floor(Math.random() * 3); // 0: cube, 1: sphere, 2: pyramid
+                this.color = `hsl(${Math.random() * 360}, 70%, 50%)`;
+            }
+
+            update() {
+                this.z -= speed;
+                if (this.z < -1000 || this.z > 3000) {
+                    this.reset();
+                }
+            }
+
+            draw() {
+                const scale = 1000 / (this.z + 1000);
+                const x = this.x * scale + width / 2;
+                const y = this.y * scale + height / 2;
+                const size = Math.max(0.1, this.size * scale); // Ensure size is always positive
+
+                if (x < -size || x > width + size || y < -size || y > height + size) {
+                    return; // Don't render if outside visible area
+                }
+
+                ctx.strokeStyle = this.color;
+                ctx.lineWidth = 2;
+
+                switch (this.type) {
+                    case 0: // Cube
+                        ctx.strokeRect(x - size/2, y - size/2, size, size);
+                        break;
+                    case 1: // Sphere
+                        ctx.beginPath();
+                        ctx.arc(x, y, size/2, 0, Math.PI * 2);
+                        ctx.stroke();
+                        break;
+                    case 2: // Pyramid
+                        ctx.beginPath();
+                        ctx.moveTo(x, y - size/2);
+                        ctx.lineTo(x - size/2, y + size/2);
+                        ctx.lineTo(x + size/2, y + size/2);
+                        ctx.closePath();
+                        ctx.stroke();
+                        break;
+                }
+            }
+        }
+
+        function rotatePoint(x, y, z, ax, ay) {
+            let rx, ry, rz;
+
+            // Rotation around X-axis
+            ry = y * Math.cos(ax) - z * Math.sin(ax);
+            rz = y * Math.sin(ax) + z * Math.cos(ax);
+
+            // Rotation around Y-axis
+            rx = x * Math.cos(ay) + rz * Math.sin(ay);
+            z = -x * Math.sin(ay) + rz * Math.cos(ay);
+
+            return {x: rx, y: ry, z: z};
+        }
+
+        function init() {
+            for (let i = 0; i < particleCount; i++) {
+                particles.push(new Particle());
+            }
+            for (let i = 0; i < shapeCount; i++) {
+                shapes.push(new Shape());
+            }
+        }
+
+        function animate() {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+            ctx.fillRect(0, 0, width, height);
+
+            [...particles, ...shapes].forEach(object => {
+                let rotated = rotatePoint(object.x, object.y, object.z, rotationX, rotationY);
+                object.x = rotated.x;
+                object.y = rotated.y;
+                object.z = rotated.z;
+                object.update();
+                object.draw();
+            });
+
+            rotationX *= 0.95;
+            rotationY *= 0.95;
+            speed *= 0.95;
+
+            requestAnimationFrame(animate);
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            lastMouseX = e.clientX;
+            lastMouseY = e.clientY;
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (isDragging) {
+                const deltaX = e.clientX - lastMouseX;
+                const deltaY = e.clientY - lastMouseY;
+                rotationY += deltaX * 0.005;
+                rotationX += deltaY * 0.005;
+                lastMouseX = e.clientX;
+                lastMouseY = e.clientY;
+            }
+        });
+
+        canvas.addEventListener('mouseup', () => isDragging = false);
+        canvas.addEventListener('mouseleave', () => isDragging = false);
+
+        window.addEventListener('resize', () => {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        });
+
+        window.addEventListener('wheel', (e) => {
+            speed += e.deltaY * 0.1;
+            speed = Math.max(-50, Math.min(speed, 50));
+            e.preventDefault();
+        }, { passive: false });
+
+        init();
+        animate();
+    </script>
+</body>
+</html>
