@@ -5,14 +5,9 @@ function show($color, $message) {
 }
 
  
-
-
-
-
-
 show "yellow" "commiting changes"
 git add .
 git commit -m "bump version"
 git push
 
-
+show "green" "changes committed"
