@@ -11,247 +11,433 @@
             height: 100%;
             overflow: hidden;
             background-color: #000;
+            font-family: Arial, sans-serif;
         }
         canvas {
             display: block;
+        }
+        #controlPanel {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: #333;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+            display: none;
+            z-index: 1000;
+            max-width: 300px;
+            overflow-y: auto;
+            max-height: 80%;
+            color: #fff;
+        }
+        #controlPanel label {
+            display: flex;
+            justify-content: space-between;
+            margin: 10px 0;
+            align-items: center;
+        }
+        #controlPanel input {
+            width: 60px;
+            padding: 5px;
+            border: 1px solid #555;
+            border-radius: 4px;
+            background: #444;
+            color: #fff;
+            text-align: right;
+        }
+        #controlPanel h2 {
+            margin: 0;
+            font-size: 1.2em;
+            color: #fff;
+            border-bottom: 1px solid #444;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        #controlPanel input[type="range"] {
+            width: 100%;
         }
     </style>
 </head>
 <body>
     <canvas id="spaceCanvas"></canvas>
+    <div id="controlPanel">
+        <h2>Settings</h2>
+    </div>
     <script>
-        const canvas = document.getElementById('spaceCanvas');
-        const ctx = canvas.getContext('2d');
+    const canvas = document.getElementById('spaceCanvas');
+const ctx = canvas.getContext('2d');
 
-        let width = canvas.width = window.innerWidth;
-        let height = canvas.height = window.innerHeight;
+let canvasWidth = canvas.width = window.innerWidth;
+let canvasHeight = canvas.height = window.innerHeight;
 
-        const particles = [];
-        const shapes = [];
-        const particleCount = 3000;
-        const shapeCount = 50;
-        let speed = 0;
-        const maxSpeed = 30;
-        const speedIncrement = 0.5;
+const controls = {
+    starCount: { value: 3000, min: 0, max: 10000, step: 100, label: "Star Count" },
+    shapeCount: { value: 50, min: 0, max: 1000, step: 1, label: "Shape Count" },
+    travelSpeed: { value: 0, min: -30, max: 30, step: 0.1, label: "Travel Speed" },
+    maxTravelSpeed: { value: 30, min: 0, max: 100, step: 1, label: "Max Travel Speed" },
+    zoomSensitivity: { value: 0.5, min: 0, max: 10, step: 0.1, label: "Zoom Sensitivity" },
+    zoomAcceleration: { value: 0.1, min: 0, max: 1, step: 0.01, label: "Zoom Acceleration" },
+    zoomDeceleration: { value: 0.98, min: 0.9, max: 1, step: 0.01, label: "Zoom Deceleration" },
+    cameraPosition: { value: 0, min: -10000, max: 10000, step: 1, label: "Camera Position" },
+    rotationX: { value: 0, min: -Math.PI, max: Math.PI, step: 0.01, label: "Rotation X" },
+    rotationY: { value: 0, min: -Math.PI, max: Math.PI, step: 0.01, label: "Rotation Y" },
+    targetRotationX: { value: 0, min: -Math.PI, max: Math.PI, step: 0.01, label: "Target Rotation X" },
+    targetRotationY: { value: 0, min: -Math.PI, max: Math.PI, step: 0.01, label: "Target Rotation Y" },
+    rotationSensitivity: { value: 0.05, min: 0, max: 1, step: 0.01, label: "Rotation Sensitivity" },
+    maxRotationSpeed: { value: 0.02, min: 0, max: 1, step: 0.01, label: "Max Rotation Speed" },
+    nearClippingPlane: { value: 100, min: 0, max: 1000, step: 10, label: "Near Clipping Plane" },
+    farClippingPlane: { value: 3000, min: 0, max: 10000, step: 10, label: "Far Clipping Plane" },
+    fadeDistance: { value: 500, min: 0, max: 2000, step: 10, label: "Fade Distance" },
+    starSize: { value: 1, min: 0.1, max: 5, step: 0.1, label: "Star Size" },
+    starBrightness: { value: 0.75, min: 0, max: 1, step: 0.05, label: "Star Brightness" },
+    shapeSize: { value: 75, min: 10, max: 200, step: 1, label: "Shape Size" },
+    shapeOpacity: { value: 1, min: 0, max: 1, step: 0.05, label: "Shape Opacity" },
+    backgroundColor: { value: '#000000', label: "Background Color" },
+    starColor: { value: '#ffffff', label: "Star Color" },
+    autoRotationX: { value: 0, min: -0.01, max: 0.01, step: 0.001, label: "Auto Rotation X" },
+    autoRotationY: { value: 0, min: -0.01, max: 0.01, step: 0.001, label: "Auto Rotation Y" },
+    textSize: { value: 48, min: 12, max: 72, step: 1, label: "Text Size" }
+};
 
-        let cameraZ = 0;
-        let rotationX = 0;
-        let rotationY = 0;
-        let targetRotationX = 0;
-        let targetRotationY = 0;
-        const rotationSpeed = 0.05;
-        const maxRotationSpeed = 0.02;
-        let isDragging = false;
-        let lastMouseX, lastMouseY;
+let stars = [];
+let shapes = [];
+let texts = [];
+let isDragging = false;
+let lastMouseX, lastMouseY;
 
-        const nearClippingPlane = 100;
-        const farClippingPlane = 3000;
-        const fadeDistance = 500;
+// Control Panel Element
+const controlPanel = document.getElementById('controlPanel');
+let controlPanelVisible = false;
 
-        class Particle {
-            constructor() {
-                this.reset();
-            }
-
-            reset() {
-                const phi = Math.random() * Math.PI * 2;
-                const costheta = Math.random() * 2 - 1;
-                const u = Math.random();
-
-                const theta = Math.acos(costheta);
-                const r = 2000 * Math.cbrt(u);
-
-                this.x = r * Math.sin(theta) * Math.cos(phi);
-                this.y = r * Math.sin(theta) * Math.sin(phi);
-                this.z = r * Math.cos(theta);
-                
-                this.radius = Math.random() * 1.5 + 0.5;
-                this.brightness = Math.random() * 0.5 + 0.5;
-            }
-
-            update() {
-                // Particles now move relative to the camera
-                let relativeZ = this.z - cameraZ;
-                if (relativeZ < -1000 || relativeZ > 3000) {
-                    this.reset();
-                    this.z += cameraZ; // Adjust for camera position
-                }
-            }
-
-            draw() {
-                let relativeZ = this.z - cameraZ;
-                const scale = 1000 / (relativeZ + 1000);
-                const x = this.x * scale + width / 2;
-                const y = this.y * scale + height / 2;
-                const r = Math.max(0.1, this.radius * scale);
-
-                if (x < -100 || x > width + 100 || y < -100 || y > height + 100) {
-                    return;
-                }
-
-                let opacity = this.brightness * (1 - relativeZ / 3000);
-                opacity *= this.getFadeOpacity(relativeZ);
-
-                ctx.beginPath();
-                ctx.arc(x, y, r, 0, Math.PI * 2);
-                ctx.fillStyle = `rgba(255, 255, 255, ${Math.max(0, Math.min(1, opacity))})`;
-                ctx.fill();
-            }
-
-            getFadeOpacity(relativeZ) {
-                if (relativeZ < nearClippingPlane) {
-                    return Math.max(0, (relativeZ - (nearClippingPlane - fadeDistance)) / fadeDistance);
-                } else if (relativeZ > farClippingPlane - fadeDistance) {
-                    return Math.max(0, (farClippingPlane - relativeZ) / fadeDistance);
-                }
-                return 1;
-            }
+function createControlPanel() {
+    controlPanel.innerHTML = '<h2>Settings</h2>';
+    for (const [key, control] of Object.entries(controls)) {
+        const label = document.createElement('label');
+        const input = document.createElement('input');
+        label.textContent = control.label || key;
+        
+        if (key.toLowerCase().includes('color')) {
+            input.type = 'color';
+            input.value = control.value;
+        } else {
+            input.type = 'number';
+            input.value = control.value;
+            input.min = control.min;
+            input.max = control.max;
+            input.step = control.step;
         }
-
-        class Shape {
-            constructor() {
-                this.init();
+        
+        input.addEventListener('input', (e) => {
+            let value = e.target.type === 'color' ? e.target.value : parseFloat(e.target.value);
+            if (e.target.type !== 'color' && (!isNaN(value) && value >= control.min && value <= control.max)) {
+                controls[key].value = value;
+            } else if (e.target.type === 'color') {
+                controls[key].value = value;
+            } else {
+                e.target.value = control.value; // Reset input to valid value
             }
-
-            init() {
-                this.x = (Math.random() - 0.5) * 4000;
-                this.y = (Math.random() - 0.5) * 4000;
-                this.z = (Math.random() - 0.5) * 4000;
-                this.size = Math.random() * 100 + 50;
-                this.type = Math.floor(Math.random() * 3);
-                this.color = `hsl(${Math.random() * 360}, 70%, 50%)`;
+            if (key === 'starCount' || key === 'shapeCount') {
+                init(); // Reinitialize stars and shapes if counts are changed
             }
+        });
+        label.appendChild(input);
+        controlPanel.appendChild(label);
+    }
 
-            update() {
-                // Shapes don't move, they're fixed in space
-            }
+    // Add text input and button for adding new text elements
+    const textInput = document.createElement('input');
+    textInput.type = 'text';
+    textInput.placeholder = 'Enter text';
+    controlPanel.appendChild(textInput);
 
-            draw() {
-                let relativeZ = this.z - cameraZ;
-                const scale = 1000 / (relativeZ + 1000);
-                const x = this.x * scale + width / 2;
-                const y = this.y * scale + height / 2;
-                const size = Math.max(0.1, this.size * scale);
+    const distanceInput = document.createElement('input');
+    distanceInput.type = 'number';
+    distanceInput.placeholder = 'Enter distance';
+    distanceInput.min = 0;
+    distanceInput.max = 10000;
+    distanceInput.step = 100;
+    controlPanel.appendChild(distanceInput);
 
-                if (x < -size || x > width + size || y < -size || y > height + size) {
-                    return;
-                }
-
-                let opacity = this.getFadeOpacity(relativeZ);
-                ctx.strokeStyle = this.color.replace(')', `, ${opacity})`).replace('rgb', 'rgba');
-                ctx.lineWidth = 2 * opacity;
-
-                switch (this.type) {
-                    case 0:
-                        ctx.strokeRect(x - size/2, y - size/2, size, size);
-                        break;
-                    case 1:
-                        ctx.beginPath();
-                        ctx.arc(x, y, size/2, 0, Math.PI * 2);
-                        ctx.stroke();
-                        break;
-                    case 2:
-                        ctx.beginPath();
-                        ctx.moveTo(x, y - size/2);
-                        ctx.lineTo(x - size/2, y + size/2);
-                        ctx.lineTo(x + size/2, y + size/2);
-                        ctx.closePath();
-                        ctx.stroke();
-                        break;
-                }
-            }
-
-            getFadeOpacity(relativeZ) {
-                if (relativeZ < nearClippingPlane) {
-                    return Math.max(0, (relativeZ - (nearClippingPlane - fadeDistance)) / fadeDistance);
-                } else if (relativeZ > farClippingPlane - fadeDistance) {
-                    return Math.max(0, (farClippingPlane - relativeZ) / fadeDistance);
-                }
-                return 1;
-            }
+    const addButton = document.createElement('button');
+    addButton.textContent = 'Add Text';
+    addButton.addEventListener('click', () => {
+        const text = textInput.value;
+        const distance = parseFloat(distanceInput.value);
+        if (text && !isNaN(distance)) {
+            texts.push({ text, distance, x: 0, y: 0, z: distance });
+            textInput.value = '';
+            distanceInput.value = '';
         }
+    });
+    controlPanel.appendChild(addButton);
 
-        function rotatePoint(x, y, z, ax, ay) {
-            let rx, ry, rz;
+    // Display added texts
+    const textList = document.createElement('ul');
+    controlPanel.appendChild(textList);
 
-            ry = y * Math.cos(ax) - z * Math.sin(ax);
-            rz = y * Math.sin(ax) + z * Math.cos(ax);
-
-            rx = x * Math.cos(ay) + rz * Math.sin(ay);
-            z = -x * Math.sin(ay) + rz * Math.cos(ay);
-
-            return {x: rx, y: ry, z: z};
-        }
-
-        function init() {
-            for (let i = 0; i < particleCount; i++) {
-                particles.push(new Particle());
-            }
-            for (let i = 0; i < shapeCount; i++) {
-                shapes.push(new Shape());
-            }
-        }
-
-        function animate() {
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
-            ctx.fillRect(0, 0, width, height);
-
-            rotationX += (targetRotationX - rotationX) * rotationSpeed;
-            rotationY += (targetRotationY - rotationY) * rotationSpeed;
-
-            cameraZ += speed;
-
-            [...particles, ...shapes].forEach(object => {
-                let rotated = rotatePoint(object.x, object.y, object.z - cameraZ, rotationX, rotationY);
-                object.x = rotated.x;
-                object.y = rotated.y;
-                object.z = rotated.z + cameraZ;
-                object.update();
-                object.draw();
+    function updateTextList() {
+        textList.innerHTML = '';
+        texts.forEach((textObj, index) => {
+            const listItem = document.createElement('li');
+            listItem.textContent = `${textObj.text} (${textObj.distance})`;
+            const removeButton = document.createElement('button');
+            removeButton.textContent = 'Remove';
+            removeButton.addEventListener('click', () => {
+                texts.splice(index, 1);
+                updateTextList();
             });
+            listItem.appendChild(removeButton);
+            textList.appendChild(listItem);
+        });
+    }
 
-            targetRotationX *= 0.95;
-            targetRotationY *= 0.95;
-            speed *= 0.98;
+    updateTextList();
+    addButton.addEventListener('click', updateTextList);
+}
 
-            requestAnimationFrame(animate);
+function toggleControlPanel() {
+    controlPanelVisible = !controlPanelVisible;
+    controlPanel.style.display = controlPanelVisible ? 'block' : 'none';
+}
+
+class Star {
+    constructor() {
+        this.reset();
+    }
+
+    reset() {
+        const phi = Math.random() * Math.PI * 2;
+        const costheta = Math.random() * 2 - 1;
+        const u = Math.random();
+
+        const theta = Math.acos(costheta);
+        const r = 2000 * Math.cbrt(u);
+
+        this.x = r * Math.sin(theta) * Math.cos(phi);
+        this.y = r * Math.sin(theta) * Math.sin(phi);
+        this.z = r * Math.cos(theta);
+        
+        this.radius = Math.random() * controls.starSize.value + 0.5;
+        this.brightness = Math.random() * controls.starBrightness.value + 0.25;
+    }
+
+    update() {
+        let relativeZ = this.z - controls.cameraPosition.value;
+        if (relativeZ < -1000 || relativeZ > 3000) {
+            this.reset();
+            this.z += controls.cameraPosition.value; // Adjust for camera position
+        }
+    }
+
+    draw() {
+        let relativeZ = this.z - controls.cameraPosition.value;
+        const scale = 1000 / (relativeZ + 1000);
+        const x = this.x * scale + canvasWidth / 2;
+        const y = this.y * scale + canvasHeight / 2;
+        const r = Math.max(0.1, this.radius * scale);
+
+        if (x < -100 || x > canvasWidth + 100 || y < -100 || y > canvasHeight + 100) {
+            return;
         }
 
-        canvas.addEventListener('mousedown', (e) => {
-            isDragging = true;
-            lastMouseX = e.clientX;
-            lastMouseY = e.clientY;
-        });
+        let opacity = this.brightness * (1 - relativeZ / 3000);
+        opacity *= this.getFadeOpacity(relativeZ);
 
-        canvas.addEventListener('mousemove', (e) => {
-            if (isDragging) {
-                const deltaX = e.clientX - lastMouseX;
-                const deltaY = e.clientY - lastMouseY;
-                
-                targetRotationY += Math.max(-maxRotationSpeed, Math.min(maxRotationSpeed, deltaX * 0.001));
-                targetRotationX += Math.max(-maxRotationSpeed, Math.min(maxRotationSpeed, deltaY * 0.001));
-                
-                lastMouseX = e.clientX;
-                lastMouseY = e.clientY;
-            }
-        });
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fillStyle = `${controls.starColor.value}${Math.round(Math.max(0, Math.min(1, opacity)) * 255).toString(16).padStart(2, '0')}`;
+        ctx.fill();
+    }
 
-        canvas.addEventListener('mouseup', () => isDragging = false);
-        canvas.addEventListener('mouseleave', () => isDragging = false);
+    getFadeOpacity(relativeZ) {
+        if (relativeZ < controls.nearClippingPlane.value) {
+            return Math.max(0, (relativeZ - (controls.nearClippingPlane.value - controls.fadeDistance.value)) / controls.fadeDistance.value);
+        } else if (relativeZ > controls.farClippingPlane.value - controls.fadeDistance.value) {
+            return Math.max(0, (controls.farClippingPlane.value - relativeZ) / controls.fadeDistance.value);
+        }
+        return 1;
+    }
+}
 
-        window.addEventListener('resize', () => {
-            width = canvas.width = window.innerWidth;
-            height = canvas.height = window.innerHeight;
-        });
+class Shape {
+    constructor() {
+        this.init();
+    }
 
-        window.addEventListener('wheel', (e) => {
-            speed += Math.sign(e.deltaY) * speedIncrement;
-            speed = Math.max(-maxSpeed, Math.min(speed, maxSpeed));
-            e.preventDefault();
-        }, { passive: false });
+    init() {
+        this.x = (Math.random() - 0.5) * 4000;
+        this.y = (Math.random() - 0.5) * 4000;
+        this.z = (Math.random() - 0.5) * 4000;
+        this.size = Math.random() * controls.shapeSize.value + 50;
+        this.type = Math.floor(Math.random() * 3);
+        this.color = `hsl(${Math.random() * 360}, 70%, 50%)`;
+    }
 
-        init();
-        animate();
+    update() {
+        // Shapes don't move, they're fixed in space
+    }
+
+    draw() {
+        let relativeZ = this.z - controls.cameraPosition.value;
+        const scale = 1000 / (relativeZ + 1000);
+        const x = this.x * scale + canvasWidth / 2;
+        const y = this.y * scale + canvasHeight / 2;
+        const size = Math.max(0.1, this.size * scale);
+
+        if (x < -size || x > canvasWidth + size || y < -size || y > canvasHeight + size) {
+            return;
+        }
+
+        let opacity = this.getFadeOpacity(relativeZ) * controls.shapeOpacity.value;
+        ctx.strokeStyle = this.color.replace(')', `, ${opacity})`).replace('rgb', 'rgba');
+        ctx.lineWidth = 2 * opacity;
+
+        switch (this.type) {
+            case 0:
+                ctx.strokeRect(x - size / 2, y - size / 2, size, size);
+                break;
+            case 1:
+                ctx.beginPath();
+                ctx.arc(x, y, size / 2, 0, Math.PI * 2);
+                ctx.stroke();
+                break;
+            case 2:
+                ctx.beginPath();
+                ctx.moveTo(x, y - size / 2);
+                ctx.lineTo(x - size / 2, y + size / 2);
+                ctx.lineTo(x + size / 2, y + size / 2);
+                ctx.closePath();
+                ctx.stroke();
+                break;
+        }
+    }
+
+    getFadeOpacity(relativeZ) {
+        if (relativeZ < controls.nearClippingPlane.value) {
+            return Math.max(0, (relativeZ - (controls.nearClippingPlane.value - controls.fadeDistance.value)) / controls.fadeDistance.value);
+        } else if (relativeZ > controls.farClippingPlane.value - controls.fadeDistance.value) {
+            return Math.max(0, (controls.farClippingPlane.value - relativeZ) / controls.fadeDistance.value);
+        }
+        return 1;
+    }
+}
+
+function rotatePoint(x, y, z, ax, ay) {
+    let rx, ry, rz;
+
+    ry = y * Math.cos(ax) - z * Math.sin(ax);
+    rz = y * Math.sin(ax) + z * Math.cos(ax);
+
+    rx = x * Math.cos(ay) + rz * Math.sin(ay);
+    z = -x * Math.sin(ay) + rz * Math.cos(ay);
+
+    return {x: rx, y: ry, z: z};
+}
+
+function init() {
+    stars = [];
+    shapes = [];
+    for (let i = 0; i < controls.starCount.value; i++) {
+        stars.push(new Star());
+    }
+    for (let i = 0; i < controls.shapeCount.value; i++) {
+        shapes.push(new Shape());
+    }
+}
+
+
+    function animate() {
+    ctx.fillStyle = controls.backgroundColor.value + '0D';  // 0D is hex for 5% opacity
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+    controls.rotationX.value += (controls.targetRotationX.value - controls.rotationX.value) * controls.rotationSensitivity.value;
+    controls.rotationY.value += (controls.targetRotationY.value - controls.rotationY.value) * controls.rotationSensitivity.value;
+
+    controls.rotationX.value += controls.autoRotationX.value;
+    controls.rotationY.value += controls.autoRotationY.value;
+
+    controls.cameraPosition.value += controls.travelSpeed.value;
+
+    [...stars, ...shapes].forEach(object => {
+        let rotated = rotatePoint(object.x, object.y, object.z - controls.cameraPosition.value, controls.rotationX.value, controls.rotationY.value);
+        object.x = rotated.x;
+        object.y = rotated.y;
+        object.z = rotated.z + controls.cameraPosition.value;
+        object.update();
+        object.draw();
+    });
+
+    // Draw texts
+    texts.forEach(textObj => {
+        let relativeZ = textObj.z - controls.cameraPosition.value;
+        const scale = 1000 / (relativeZ + 1000);
+        const x = textObj.x * scale + canvasWidth / 2;
+        const y = textObj.y * scale + canvasHeight / 2;
+
+        if (x > -canvasWidth && x < canvasWidth * 2 && y > -canvasHeight && y < canvasHeight * 2) {
+            let opacity = 1 - Math.abs(relativeZ) / textObj.distance;
+            opacity = Math.max(0, Math.min(1, opacity));
+
+            const fontSize = controls.textSize.value * scale;
+            ctx.font = `${fontSize}px Arial`;
+            ctx.fillStyle = `rgba(255, 255, 255, ${opacity})`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(textObj.text, x, y);
+        }
+    });
+
+    controls.targetRotationX.value *= 0.95;
+    controls.targetRotationY.value *= 0.95;
+    controls.travelSpeed.value *= controls.zoomDeceleration.value;
+
+    requestAnimationFrame(animate);
+}
+
+// Toggle control panel visibility with Ctrl key
+window.addEventListener('keydown', (e) => {
+    if (e.key === 'Control') {
+        toggleControlPanel();
+    }
+});
+
+canvas.addEventListener('mousedown', (e) => {
+    isDragging = true;
+    lastMouseX = e.clientX;
+    lastMouseY = e.clientY;
+});
+
+canvas.addEventListener('mousemove', (e) => {
+    if (isDragging) {
+        const deltaX = e.clientX - lastMouseX;
+        const deltaY = e.clientY - lastMouseY;
+
+        controls.targetRotationY.value += Math.max(-controls.maxRotationSpeed.value, Math.min(controls.maxRotationSpeed.value, deltaX * 0.001));
+        controls.targetRotationX.value += Math.max(-controls.maxRotationSpeed.value, Math.min(controls.maxRotationSpeed.value, deltaY * 0.001));
+
+        lastMouseX = e.clientX;
+        lastMouseY = e.clientY;
+    }
+});
+
+canvas.addEventListener('mouseup', () => isDragging = false);
+canvas.addEventListener('mouseleave', () => isDragging = false);
+
+window.addEventListener('resize', () => {
+    canvasWidth = canvas.width = window.innerWidth;
+    canvasHeight = canvas.height = window.innerHeight;
+});
+
+window.addEventListener('wheel', (e) => {
+    controls.travelSpeed.value += Math.sign(e.deltaY) * controls.zoomSensitivity.value;
+    controls.travelSpeed.value = Math.max(-controls.maxTravelSpeed.value, Math.min(controls.travelSpeed.value, controls.maxTravelSpeed.value));
+    e.preventDefault();
+}, { passive: false });
+
+createControlPanel();
+init();
+animate();
     </script>
 </body>
 </html>
