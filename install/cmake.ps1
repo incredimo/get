@@ -73,21 +73,44 @@ if (-not (Command-Exists "cmake")) {
     Print-Colored "CMake is already installed." $GREEN
     cmake --version
 }
+# Function to refresh the environment variables
+function Refresh-EnvironmentVariables {
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+}
 
-# Install Ninja
+# Check if Ninja is installed and add to PATH if necessary
 Print-Colored "Checking if Ninja is installed..." $CYAN
-if (-not (Command-Exists "ninja")) {
+$installed = $false
+if (Command-Exists "ninja") {
+    Print-Colored "Ninja is already installed." $GREEN
+    $installed = $true
+} else {
     Print-Colored "Installing Ninja using winget..." $CYAN
     Run-Command winget install -e --id NinjaBuild.Ninja
     if ($LASTEXITCODE -ne 0) {
         Print-Colored "Failed to install Ninja using winget." $RED
         exit 1
     }
-    Print-Colored "Ninja has been successfully installed." $GREEN
-} else {
-    Print-Colored "Ninja is already installed." $GREEN
-    ninja --version
+    Refresh-EnvironmentVariables
+    if (Command-Exists "ninja") {
+        Print-Colored "Ninja has been successfully installed." $GREEN
+        $installed = $true
+    } else {
+        Print-Colored "Ninja installation verification failed." $RED
+        exit 1
+    }
 }
+
+# Set up PATH environment variable if Ninja was installed
+if ($installed) {
+    $ninjaPath = (Get-Command ninja).Path
+    $ninjaDir = [System.IO.Path]::GetDirectoryName($ninjaPath)
+    if ($envPath -notcontains $ninjaDir) {
+        Print-Colored "Adding Ninja to PATH..." $CYAN
+        [System.Environment]::SetEnvironmentVariable("Path", "$envPath;$ninjaDir", "User")
+    }
+}
+ 
 
 # Install Visual Studio Build Tools
 Print-Colored "Checking for Visual Studio Build Tools..." $CYAN
