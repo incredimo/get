@@ -20,7 +20,6 @@ command_exists() {
 
 # Display banner
 echo -e "${CYAN}
-
  /██   /██  /██████      /██████   /███████
  |  ██ /██/ /██__  ██    /██__  ██ /██_____/
   \  ████/ | ██  \ ██   | ██  \__/|  ██████ 
@@ -44,25 +43,25 @@ apt-get update || { print_colored "Failed to update package lists. Please check 
 
 # Install prerequisites
 print_colored "Installing prerequisites..." $CYAN
-apt-get install -y software-properties-common || { print_colored "Failed to install required packages." $RED; exit 1; }
+apt-get install -y software-properties-common curl || { print_colored "Failed to install required packages." $RED; exit 1; }
 
-# Add deadsnakes PPA for more recent Python versions
+# Add deadsnakes PPA manually
 print_colored "Adding deadsnakes PPA..." $CYAN
-add-apt-repository -y ppa:deadsnakes/ppa || { print_colored "Failed to add deadsnakes PPA." $RED; exit 1; }
+curl -fsSL https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x6A755776 | gpg --dearmor -o /usr/share/keyrings/deadsnakes-archive-keyring.gpg || { print_colored "Failed to fetch and add PPA key." $RED; exit 1; }
+echo "deb [signed-by=/usr/share/keyrings/deadsnakes-archive-keyring.gpg] http://ppa.launchpad.net/deadsnakes/ppa/ubuntu $(lsb_release -sc) main" | tee /etc/apt/sources.list.d/deadsnakes.list || { print_colored "Failed to add PPA to sources list." $RED; exit 1; }
 
 # Update package lists again
-print_colored "Updating package lists..." $CYAN
+print_colored "Updating package lists after adding PPA..." $CYAN
 apt-get update || { print_colored "Failed to update package lists after adding PPA." $RED; exit 1; }
 
 # Install Python
 print_colored "Installing Python..." $CYAN
-apt-get install -y python3 python3-pip python3-venv || { print_colored "Failed to install Python." $RED; exit 1; }
+apt-get install -y python3.9 python3.9-venv python3.9-dev || { print_colored "Failed to install Python." $RED; exit 1; }
 
 # Verify Python installation
-if command_exists python3; then
+if command_exists python3.9; then
     print_colored "Python has been successfully installed." $GREEN
-    python3 --version
-    pip3 --version
+    python3.9 --version
 else
     print_colored "Python installation verification failed. Please check the installation logs." $RED
     exit 1
@@ -73,7 +72,7 @@ read -p "Do you want to set up a virtual environment? (y/n): " setup_venv
 
 if [[ $setup_venv == "y" || $setup_venv == "Y" ]]; then
     read -p "Enter the directory name for the virtual environment: " venv_dir
-    python3 -m venv "$venv_dir" || { print_colored "Failed to create virtual environment." $RED; exit 1; }
+    python3.9 -m venv "$venv_dir" || { print_colored "Failed to create virtual environment." $RED; exit 1; }
     print_colored "Virtual environment created at ./$venv_dir. Activate it with 'source $venv_dir/bin/activate'." $GREEN
 else
     print_colored "Skipping virtual environment setup." $YELLOW
