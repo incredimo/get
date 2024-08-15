@@ -1,42 +1,32 @@
-use duct::cmd;
-///! # get
-///! get is a simple application installer / package manager for windows and linux.
-///! get listens to various get repos to easily install applications. users can also add their own repos.
-///! get can easily use winget, scoop, choco (soon more) manifests to install applications.
-///! get parses the manifests of these package managers, understands the dependencies and installs them.
-///! (not using the package manager itself). so regardless of the package manager, get will install the applications the get way.
-///! get also has a simple yet very powerful manifest format that can be used to install applications.
-///!
-///! ## get manifest
-///! get manifests are simple json files that lists out a list of steps to install/uninstall/download/update an application.
-///! git steps are simple and easy to understand and can be used to explain any process one step at a time.
-///! get steps also support variables and conditions to make the steps more dynamic and powerful.
-///!
-///! ## usage
-///! you can search for any application using `get <app-name>` and install it using `get install <app-name>`.
-///! you can also list all the installed applications using `get list`. by default get uses few official repos to search for applications.
-///! you can add your own repos using `get add <repo-url>`. you can also remove the repos using `get remove <repo-url>`.
-///! get searches for the application in all the repos and installs the application from the first repo that has the application.
-///! you can also define a priority using `get config` and editing the `repos` field in the config.toml file.
-///! get also has a `get update` command that updates all the installed applications.
-///! get also has a `get uninstall <app-name>` command that uninstalls the application.
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::fs;
-use std::io::{Write, Read};
-use std::process::Command;
-use reqwest;
-use zip;
-use std::env;
-use std::thread;
-use std::time::Duration;
-use regex::Regex;
-use url::Url;
-use indicatif::{ProgressBar, ProgressStyle};
 use colored::*;
+use indicatif::{ProgressBar, ProgressStyle};
+use minimo::banner::Banner;
+use regex::Regex;
+use reqwest;
+use serde::{Deserialize, Serialize};
+use serde_json;
+use sha2::{Digest, Sha256};
+use std::collections::HashMap;
+use std::error::Error;
+use std::fmt;
+use std::fs;
+use std::io::copy;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use yaml_rust::YamlLoader;
 
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+type Result<T> = std::result::Result<T, Box<dyn Error>>;
+
+#[derive(Debug)]
+struct GetError(String);
+
+impl fmt::Display for GetError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl Error for GetError {}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Config {
@@ -47,7 +37,7 @@ pub struct Config {
 impl Config {
     pub fn new() -> Self {
         Config {
-            repos: vec!["https://example.com/default-repo.json".to_string()],
+            repos: vec!["https://github.com/microsoft/winget-pkgs".to_string()],
             download_dir: PathBuf::from("downloads"),
         }
     }
@@ -59,362 +49,888 @@ impl Config {
             config.save()?;
             return Ok(config);
         }
-        let mut file = fs::File::open(path)?;
-        let mut contents = String::new();
-        file.read_to_string(&mut contents)?;
+        let contents = fs::read_to_string(path)?;
         let config: Config = toml::from_str(&contents)?;
         Ok(config)
     }
 
     pub fn save(&self) -> Result<()> {
         let path = Path::new("config.toml");
-        let mut file = fs::File::create(path)?;
         let toml = toml::to_string(&self)?;
-        file.write_all(toml.as_bytes())?;
+        fs::write(path, toml)?;
         Ok(())
     }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Repository {
-    pub url: String,
-    pub description: Option<String>,
-}
-
-impl Repository {
-    pub fn new(url: &str, description: Option<&str>) -> Self {
-        Repository {
-            url: url.to_string(),
-            description: description.map(|s| s.to_string()),
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct App {
-    pub identifier: String,
-    pub name: String,
-    pub description: Option<String>,
-    pub version: String,
-    pub platform: String,
-    pub architecture: String,
-    pub install_steps: Vec<Step>,
-    pub uninstall_steps: Vec<Step>,
+pub struct WingetManifest {
+    package_identifier: String,
+    package_name: String,
+    package_version: String,
+    publisher: String,
+    license: Option<String>,
+    short_description: Option<String>,
+    description: Option<String>,
+    homepage: Option<String>,
+    installers: Vec<WingetInstaller>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(tag = "type")]
-pub enum Step {
-    Download { url: String, target: String },
-    Extract { source: String, target: String },
-    Run { command: String, args: Vec<String> },
-    Copy { source: String, target: String },
-    Delete { target: String },
-    CreateDir { target: String },
-    SetEnv { name: String, value: String },
-    UnsetEnv { name: String },
-    SetRegistry { key: String, value: String },
-    RemoveRegistry { key: String },
+pub struct WingetInstaller {
+    architecture: String,
+    installer_type: String,
+    installer_url: String,
+    installer_sha256: String,
+    scope: Option<String>,
+    silent_args: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ChocolateyManifest {
+    id: String,
+    version: String,
+    title: Option<String>,
+    authors: Option<String>,
+    owners: Option<String>,
+    description: Option<String>,
+    project_url: Option<String>,
+    package_source_url: Option<String>,
+    tags: Option<Vec<String>>,
+    license_url: Option<String>,
+    icon_url: Option<String>,
+    release_notes: Option<String>,
+    dependencies: Option<Vec<ChocolateyDependency>>,
+    files: Vec<ChocolateyFile>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ChocolateyDependency {
+    id: String,
+    version: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ChocolateyFile {
+    src: String,
+    target: String,
+}
+
 pub struct Get {
     config: Config,
-    repos: Vec<Repository>,
-    installed_apps: HashMap<String, App>,
+    installed_apps: HashMap<String, String>,
 }
 
 impl Get {
     pub fn new() -> Result<Self> {
         let config = Config::load()?;
-        let repos = config.repos.iter().map(|url| Repository::new(url, None)).collect();
         let installed_apps = Self::load_installed_apps()?;
-        Ok(Get { config, repos, installed_apps })
+        Ok(Get {
+            config,
+            installed_apps,
+        })
     }
 
-    fn load_installed_apps() -> Result<HashMap<String, App>> {
+    fn load_installed_apps() -> Result<HashMap<String, String>> {
         let path = Path::new("installed_apps.json");
         if !path.exists() {
             return Ok(HashMap::new());
         }
-        let file = fs::File::open(path)?;
-        let apps: HashMap<String, App> = serde_json::from_reader(file)?;
+        let contents = fs::read_to_string(path)?;
+        let apps: HashMap<String, String> = serde_json::from_str(&contents)?;
         Ok(apps)
     }
 
     fn save_installed_apps(&self) -> Result<()> {
         let path = Path::new("installed_apps.json");
-        let file = fs::File::create(path)?;
-        serde_json::to_writer(file, &self.installed_apps)?;
+        let json = serde_json::to_string(&self.installed_apps)?;
+        fs::write(path, json)?;
         Ok(())
     }
 
-    pub fn search(&self, app_name: &str) -> Result<Vec<App>> {
-        let mut results = Vec::new();
-        for repo in &self.repos {
-            let apps = self.get_apps_from_repo(&repo.url)?;
-            results.extend(apps.into_iter().filter(|app| app.name.to_lowercase().contains(&app_name.to_lowercase())));
+    pub fn parse_winget_manifest(&self, manifest_path: &str) -> Result<WingetManifest> {
+        let contents = fs::read_to_string(manifest_path)?;
+        let docs = YamlLoader::load_from_str(&contents)?;
+        let doc = &docs[0];
+
+        let mut installers = Vec::new();
+        if let Some(installer_list) = doc["Installers"].as_vec() {
+            for installer in installer_list {
+                installers.push(WingetInstaller {
+                    architecture: installer["Architecture"]
+                        .as_str()
+                        .unwrap_or("x64")
+                        .to_string(),
+                    installer_type: installer["InstallerType"]
+                        .as_str()
+                        .unwrap_or("")
+                        .to_string(),
+                    installer_url: installer["InstallerUrl"].as_str().unwrap_or("").to_string(),
+                    installer_sha256: installer["InstallerSha256"]
+                        .as_str()
+                        .unwrap_or("")
+                        .to_string(),
+                    scope: installer["Scope"].as_str().map(String::from),
+                    silent_args: installer["SilentArgs"].as_str().map(String::from),
+                });
+            }
         }
-        Ok(results)
+
+        Ok(WingetManifest {
+            package_identifier: doc["PackageIdentifier"].as_str().unwrap_or("").to_string(),
+            package_name: doc["PackageName"].as_str().unwrap_or("").to_string(),
+            package_version: doc["PackageVersion"].as_str().unwrap_or("").to_string(),
+            publisher: doc["Publisher"].as_str().unwrap_or("").to_string(),
+            license: doc["License"].as_str().map(String::from),
+            short_description: doc["ShortDescription"].as_str().map(String::from),
+            description: doc["Description"].as_str().map(String::from),
+            homepage: doc["Homepage"].as_str().map(String::from),
+            installers,
+        })
     }
 
-    fn get_apps_from_repo(&self, repo_url: &str) -> Result<Vec<App>> {
-        if Url::parse(repo_url).is_ok() {
-            let repo_apps: Vec<App> = reqwest::blocking::get(repo_url)?.json()?;
-            Ok(repo_apps)
-        } else {
-            let path = PathBuf::from(repo_url);
-            let file = fs::File::open(path)?;
-            let repo_apps: Vec<App> = serde_json::from_reader(file)?;
-            Ok(repo_apps)
-        }
+    pub fn parse_chocolatey_manifest(&self, manifest_path: &str) -> Result<ChocolateyManifest> {
+        let contents = fs::read_to_string(manifest_path)?;
+        let manifest: ChocolateyManifest = serde_json::from_str(&contents)?;
+        Ok(manifest)
     }
 
-    pub fn install(&mut self, app_name: &str) -> Result<()> {
-        let app = self.search(app_name)?
-            .into_iter()
-            .next()
-            .ok_or("App not found")?;
+    pub fn install_winget_package(&mut self, manifest: &WingetManifest) -> Result<()> {
+        println!(
+            "{}",
+            format!(
+                "Installing {} using Winget manifest...",
+                manifest.package_name
+            )
+            .green()
+        );
 
-        println!("{}", format!("Installing {}...", app.name).green().bold());
+        let installer = manifest
+            .installers
+            .first()
+            .ok_or(GetError("No installer found".into()))?;
 
-        let pb = ProgressBar::new(app.install_steps.len() as u64);
-        pb.set_style(ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] {bar:40.cyan/blue} {pos}/{len} {msg}")
+        let installer_filename = Path::new(&installer.installer_url)
+            .file_name()
             .unwrap()
-            .progress_chars("#>-"));
+            .to_str()
+            .unwrap();
+        let installer_path = self.config.download_dir.join(installer_filename);
 
-        for (index, step) in app.install_steps.iter().enumerate() {
-            let step_name = self.get_step_name(step);
-            pb.set_message(format!("Step {}: {}", index + 1, step_name));
-            self.execute_step(step)?;
-            pb.inc(1);
-            thread::sleep(Duration::from_millis(100));
-        }
+        self.download_file(&installer.installer_url, &installer_path)?;
+        self.verify_sha256(&installer_path, &installer.installer_sha256)?;
 
-        pb.finish_with_message(format!("{} installed successfully", app.name));
-
-        self.installed_apps.insert(app.identifier.clone(), app);
-        self.save_installed_apps()?;
-        Ok(())
-    }
-
-    pub fn uninstall(&mut self, app_name: &str) -> Result<()> {
-        let app = self.installed_apps.remove(app_name).ok_or("App not installed")?;
-
-        println!("{}", format!("Uninstalling {}...", app.name).red().bold());
-
-        let pb = ProgressBar::new(app.uninstall_steps.len() as u64);
-        pb.set_style(ProgressStyle::default_bar()
-            .template("{spinner:.red} [{elapsed_precise}] {bar:40.cyan/blue} {pos}/{len} {msg}")
-            .unwrap()
-            .progress_chars("#>-"));
-
-        for (index, step) in app.uninstall_steps.iter().enumerate() {
-            let step_name = self.get_step_name(step);
-            pb.set_message(format!("Step {}: {}", index + 1, step_name));
-            self.execute_step(step)?;
-            pb.inc(1);
-            thread::sleep(Duration::from_millis(100));
-        }
-
-        pb.finish_with_message(format!("{} uninstalled successfully", app.name));
-
-        self.save_installed_apps()?;
-        Ok(())
-    }
-
-    fn execute_step(&self, step: &Step) -> Result<()> {
-        match step {
-            Step::Download { url, target } => {
-                let target_path = self.config.download_dir.join(target);
-                let mut response = reqwest::blocking::get(url)?;
-                let mut file = fs::File::create(target_path)?;
-                response.copy_to(&mut file)?;
-            }
-            Step::Extract { source, target } => {
-                let source_path = self.config.download_dir.join(source);
-                let target_path = PathBuf::from(target);
-                let file = fs::File::open(source_path)?;
-                let mut archive = zip::ZipArchive::new(file)?;
-                archive.extract(target_path)?;
-            }
-            Step::Run { command, args } => {
-                Command::new(command)
-                .current_dir(&self.config.download_dir)
-                    .args(args)
-                    .output()?;
-            }
-            Step::Copy { source, target } => {
-                let source_path = self.config.download_dir.join(source);
-                let target_path = PathBuf::from(target);
-                fs::copy(source_path, target_path)?;
-            }
-            Step::Delete { target } => {
-                let target_path = PathBuf::from(target);
-                if target_path.is_file() {
-                    fs::remove_file(target_path)?;
-                } else if target_path.is_dir() {
-                    fs::remove_dir_all(target_path)?;
+        let mut cmd = match installer.installer_type.as_str() {
+            "msi" => {
+                let mut c = Command::new("msiexec");
+                c.arg("/i").arg(&installer_path);
+                if let Some(args) = &installer.silent_args {
+                    c.args(args.split_whitespace());
+                } else {
+                    c.arg("/qn");
                 }
+                c
             }
-            Step::CreateDir { target } => {
-                fs::create_dir_all(target)?;
+            "exe" | "inno" | "nullsoft" => {
+                let mut c = Command::new(&installer_path);
+                if let Some(args) = &installer.silent_args {
+                    c.args(args.split_whitespace());
+                } else {
+                    c.arg("/S");
+                }
+                c
             }
-            Step::SetEnv { name, value } => {
-                env::set_var(name, value);
+            _ => {
+                return Err(Box::new(GetError(format!(
+                    "Unsupported installer type: {}",
+                    installer.installer_type
+                ))))
             }
-            Step::UnsetEnv { name } => {
-                env::remove_var(name);
-            } 
-            _ => {}
+        };
+
+        let output = cmd.output()?;
+        if output.status.success() {
+            println!(
+                "{}",
+                format!("{} installed successfully", manifest.package_name).green()
+            );
+            self.installed_apps.insert(
+                manifest.package_identifier.clone(),
+                manifest.package_version.clone(),
+            );
+            self.save_installed_apps()?;
+            Ok(())
+        } else {
+            let error_message = String::from_utf8_lossy(&output.stderr);
+            Err(Box::new(GetError(format!(
+                "Failed to install {}: {}",
+                manifest.package_name, error_message
+            ))))
+        }
+    }
+
+    pub fn install_chocolatey_package(&mut self, manifest: &ChocolateyManifest) -> Result<()> {
+        println!(
+            "{}",
+            format!("Installing {} using Chocolatey manifest...", manifest.id).green()
+        );
+
+        let temp_dir = tempfile::tempdir()?;
+        let package_dir = temp_dir.path().join(&manifest.id);
+        fs::create_dir(&package_dir)?;
+
+        let pb = ProgressBar::new(manifest.files.len() as u64);
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template(
+                    "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta})",
+                )
+                .unwrap()
+                .progress_chars("#>-"),
+        );
+
+        for file in &manifest.files {
+            let file_path = package_dir.join(&file.target);
+            if let Some(parent) = file_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            self.download_file(&file.src, &file_path)?;
+            pb.inc(1);
+        }
+
+        pb.finish_with_message("All files downloaded");
+
+        let chocolateyinstall_ps1 = package_dir.join("tools").join("chocolateyinstall.ps1");
+        if chocolateyinstall_ps1.exists() {
+            let output = Command::new("powershell")
+                .arg("-ExecutionPolicy")
+                .arg("Bypass")
+                .arg("-File")
+                .arg(&chocolateyinstall_ps1)
+                .output()?;
+
+            if !output.status.success() {
+                let error_message = String::from_utf8_lossy(&output.stderr);
+                return Err(Box::new(GetError(format!(
+                    "Failed to install {}: {}",
+                    manifest.id, error_message
+                ))));
+            }
+        }
+
+        println!(
+            "{}",
+            format!("{} installed successfully", manifest.id).green()
+        );
+        self.installed_apps
+            .insert(manifest.id.clone(), manifest.version.clone());
+        self.save_installed_apps()?;
+        Ok(())
+    }
+
+    pub fn uninstall_winget_package(&mut self, manifest: &WingetManifest) -> Result<()> {
+        println!(
+            "{}",
+            format!(
+                "Uninstalling {} using Winget manifest...",
+                manifest.package_name
+            )
+            .yellow()
+        );
+
+        let installer = manifest
+            .installers
+            .first()
+            .ok_or(GetError("No installer found".into()))?;
+
+        let mut cmd = match installer.installer_type.as_str() {
+            "msi" => {
+                let mut c = Command::new("msiexec");
+                c.arg("/x").arg(&manifest.package_identifier);
+                if let Some(args) = &installer.silent_args {
+                    c.args(args.split_whitespace());
+                } else {
+                    c.arg("/qn");
+                }
+                c
+            }
+            "exe" | "inno" | "nullsoft" => {
+                let uninstaller_path = self.find_uninstaller(&manifest.package_name)?;
+                let mut c = Command::new(&uninstaller_path);
+                if let Some(args) = &installer.silent_args {
+                    c.args(args.split_whitespace());
+                } else {
+                    c.arg("/S");
+                }
+                c
+            }
+            _ => {
+                return Err(Box::new(GetError(format!(
+                    "Unsupported installer type: {}",
+                    installer.installer_type
+                ))))
+            }
+        };
+
+        let output = cmd.output()?;
+        if output.status.success() {
+            println!(
+                "{}",
+                format!("{} uninstalled successfully", manifest.package_name).green()
+            );
+            self.installed_apps.remove(&manifest.package_identifier);
+            self.save_installed_apps()?;
+            Ok(())
+        } else {
+            let error_message = String::from_utf8_lossy(&output.stderr);
+            Err(Box::new(GetError(format!(
+                "Failed to uninstall {}: {}",
+                manifest.package_name, error_message
+            ))))
+        }
+    }
+
+    pub fn uninstall_chocolatey_package(&mut self, manifest: &ChocolateyManifest) -> Result<()> {
+        println!(
+            "{}",
+            format!("Uninstalling {} using Chocolatey manifest...", manifest.id).yellow()
+        );
+
+        let chocolateyuninstall_ps1 = PathBuf::from("C:\\ProgramData\\chocolatey\\lib")
+            .join(&manifest.id)
+            .join("tools")
+            .join("chocolateyuninstall.ps1");
+
+        if chocolateyuninstall_ps1.exists() {
+            let output = Command::new("powershell")
+                .arg("-ExecutionPolicy")
+                .arg("Bypass")
+                .arg("-File")
+                .arg(&chocolateyuninstall_ps1)
+                .output()?;
+
+            if !output.status.success() {
+                let error_message = String::from_utf8_lossy(&output.stderr);
+                return Err(Box::new(GetError(format!(
+                    "Failed to uninstall {}: {}",
+                    manifest.id, error_message
+                ))));
+            }
+        } else {
+            let uninstaller_path = self.find_uninstaller(&manifest.id)?;
+            let output = Command::new(&uninstaller_path).arg("/S").output()?;
+
+            if !output.status.success() {
+                let error_message = String::from_utf8_lossy(&output.stderr);
+                return Err(Box::new(GetError(format!(
+                    "Failed to uninstall {}: {}",
+                    manifest.id, error_message
+                ))));
+            }
+        }
+
+        println!(
+            "{}",
+            format!("{} uninstalled successfully", manifest.id).green()
+        );
+        self.installed_apps.remove(&manifest.id);
+        self.save_installed_apps()?;
+        Ok(())
+    }
+
+    fn download_file(&self, url: &str, target: &Path) -> Result<()> {
+        let mut response = reqwest::blocking::get(url)?;
+        let mut file = fs::File::create(target)?;
+        copy(&mut response, &mut file)?;
+        Ok(())
+    }
+
+    fn verify_sha256(&self, file_path: &Path, expected_hash: &str) -> Result<()> {
+        let mut file = fs::File::open(file_path)?;
+        let mut hasher = Sha256::new();
+        copy(&mut file, &mut hasher)?;
+        let hash = format!("{:x}", hasher.finalize());
+        if hash == expected_hash {
+            Ok(())
+        } else {
+            Err(Box::new(GetError(format!(
+                "SHA256 mismatch for {}",
+                file_path.display()
+            ))))
+        }
+    }
+
+    fn find_uninstaller(&self, package_name: &str) -> Result<PathBuf> {
+        let output = Command::new("reg")
+            .args(&[
+                "query",
+                r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+                "/s",
+                "/f",
+                package_name,
+            ])
+            .output()?;
+
+        let output_str = String::from_utf8_lossy(&output.stdout);
+        let re = Regex::new(r"UninstallString\s+REG_SZ\s+(.+)")?;
+
+        if let Some(caps) = re.captures(&output_str) {
+            if let Some(uninstaller_path) = caps.get(1) {
+                return Ok(PathBuf::from(uninstaller_path.as_str().trim()));
+            }
+        }
+
+        Err(Box::new(GetError(format!(
+            "Uninstaller not found for {}",
+            package_name
+        ))))
+    }
+
+    pub fn install_from_manifest(&mut self, manifest_path: &str) -> Result<()> {
+        let path = Path::new(manifest_path);
+        if !path.exists() {
+            return Err(Box::new(GetError(format!(
+                "Manifest file not found: {}",
+                manifest_path
+            ))));
+        }
+
+        if path.extension().and_then(|s| s.to_str()) == Some("yaml") {
+            let manifest = self.parse_winget_manifest(manifest_path)?;
+            self.install_winget_package(&manifest)
+        } else if path.extension().and_then(|s| s.to_str()) == Some("json") {
+            let manifest = self.parse_chocolatey_manifest(manifest_path)?;
+            self.install_chocolatey_package(&manifest)
+        } else {
+            Err(Box::new(GetError("Unsupported manifest format".into())))
+        }
+    }
+
+    pub fn uninstall_from_manifest(&mut self, manifest_path: &str) -> Result<()> {
+        let path = Path::new(manifest_path);
+        if !path.exists() {
+            return Err(Box::new(GetError(format!(
+                "Manifest file not found: {}",
+                manifest_path
+            ))));
+        }
+
+        if path.extension().and_then(|s| s.to_str()) == Some("yaml") {
+            let manifest = self.parse_winget_manifest(manifest_path)?;
+            self.uninstall_winget_package(&manifest)
+        } else if path.extension().and_then(|s| s.to_str()) == Some("json") {
+            let manifest = self.parse_chocolatey_manifest(manifest_path)?;
+            self.uninstall_chocolatey_package(&manifest)
+        } else {
+            Err(Box::new(GetError("Unsupported manifest format".into())))
+        }
+    }
+
+    pub fn list_installed_apps(&self) -> Result<()> {
+        println!("{}", "Installed applications:".cyan().bold());
+        for (app_id, version) in &self.installed_apps {
+            println!("{} ({})", app_id.green(), version.blue());
         }
         Ok(())
     }
 
-    fn get_step_name(&self, step: &Step) -> String {
-        match step {
-            Step::Download { .. } => "Downloading".to_string(),
-            Step::Extract { .. } => "Extracting".to_string(),
-            Step::Run { .. } => "Running command".to_string(),
-            Step::Copy { .. } => "Copying files".to_string(),
-            Step::Delete { .. } => "Deleting files".to_string(),
-            Step::CreateDir { .. } => "Creating directory".to_string(),
-            Step::SetEnv { .. } => "Setting environment variable".to_string(),
-            Step::UnsetEnv { .. } => "Unsetting environment variable".to_string(),
-            _ => "unimplemented function".to_string(),
+    pub fn update_all(&mut self) -> Result<()> {
+        println!("{}", "Updating all installed applications...".cyan().bold());
+        let apps_to_update: Vec<(String, String)> =
+            self.installed_apps.clone().into_iter().collect();
+
+        for (app_id, installed_version) in apps_to_update {
+            match self.update_app(&app_id, &installed_version) {
+                Ok(_) => println!("{}", format!("Updated {}", app_id).green()),
+                Err(e) => println!("{}", format!("Failed to update {}: {}", app_id, e).red()),
+            }
         }
+        Ok(())
     }
 
-    pub fn list(&self) -> Vec<&App> {
-        self.installed_apps.values().collect()
+    fn update_app(&mut self, app_id: &str, installed_version: &str) -> Result<()> {
+        let manifest_path = self.find_manifest(app_id)?;
+
+        if manifest_path.extension().and_then(|s| s.to_str()) == Some("yaml") {
+            let manifest = self.parse_winget_manifest(&manifest_path.to_string_lossy())?;
+            if first_is_greater(&manifest.package_version, installed_version) {
+                self.install_winget_package(&manifest)?;
+            }
+        } else if manifest_path.extension().and_then(|s| s.to_str()) == Some("json") {
+            let manifest = self.parse_chocolatey_manifest(&manifest_path.to_string_lossy())?;
+            if first_is_greater(&manifest.version, installed_version) {
+                self.install_chocolatey_package(&manifest)?;
+            }
+        } else {
+            return Err(Box::new(GetError("Unsupported manifest format".into())));
+        }
+
+        Ok(())
     }
 
-    pub fn update(&mut self) -> Result<()> {
-        println!("{}", "Checking for updates...".cyan().bold());
-        let cloned_self = self.clone();
-        let pb = ProgressBar::new(cloned_self.installed_apps.len() as u64);
-        pb.set_style(ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] {bar:40.cyan/blue} {pos}/{len} {msg}")
-            .unwrap()
-            .progress_chars("#>-"));
+    fn find_manifest(&self, app_id: &str) -> Result<PathBuf> {
+        for repo in &self.config.repos {
+            let repo_path = Path::new(repo);
+            if repo_path.is_dir() {
+                let winget_path = repo_path
+                    .join("manifests")
+                    .join(app_id)
+                    .with_extension("yaml");
+                if winget_path.exists() {
+                    return Ok(winget_path);
+                }
+                let choco_path = repo_path
+                    .join("manifests")
+                    .join(app_id)
+                    .with_extension("json");
+                if choco_path.exists() {
+                    return Ok(choco_path);
+                }
+            } else {
+                // TODO: Implement remote repository search
+                println!(
+                    "{}",
+                    format!(
+                        "Searching remote repository {} is not yet implemented",
+                        repo
+                    )
+                    .yellow()
+                );
+            }
+        }
+        Err(Box::new(GetError(format!(
+            "Manifest not found for {}",
+            app_id
+        ))))
+    }
 
-        for app in cloned_self.installed_apps.values() {
-            pb.set_message(format!("Checking {}", app.name));
-            match self.search(&app.name) {
-                Ok(search_results) => {
-                    if let Some(latest_version) = search_results.into_iter().next() {
-                        if latest_version.version != app.version {
-                            println!("{}", format!("Updating {} from {} to {}", app.name, app.version, latest_version.version).yellow());
-                            self.uninstall(&app.identifier)?;
-                            self.install(&latest_version.name)?;
+    pub fn search(&self, query: &str) -> Result<()> {
+        println!("{}", format!("Searching for '{}'...", query).cyan().bold());
+        let mut results = Vec::new();
+
+        for repo in &self.config.repos {
+            let repo_path = Path::new(repo);
+            if repo_path.is_dir() {
+                self.search_local_repo(repo_path, query, &mut results)?;
+            } else {
+                // TODO: Implement remote repository search
+                println!(
+                    "{}",
+                    format!(
+                        "Searching remote repository {} is not yet implemented",
+                        repo
+                    )
+                    .yellow()
+                );
+            }
+        }
+
+        if results.is_empty() {
+            println!("{}", "No results found.".yellow());
+        } else {
+            for result in results {
+                println!("{} ({})", result.0.green(), result.1.blue());
+            }
+        }
+
+        Ok(())
+    }
+
+    fn search_local_repo(
+        &self,
+        repo_path: &Path,
+        query: &str,
+        results: &mut Vec<(String, String)>,
+    ) -> Result<()> {
+        let manifests_dir = repo_path.join("manifests");
+        if !manifests_dir.is_dir() {
+            return Ok(());
+        }
+
+        for entry in fs::read_dir(manifests_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_file() {
+                if let Some(ext) = path.extension() {
+                    if ext == "yaml" {
+                        let manifest = self.parse_winget_manifest(&path.to_string_lossy())?;
+                        if manifest
+                            .package_name
+                            .to_lowercase()
+                            .contains(&query.to_lowercase())
+                        {
+                            results.push((manifest.package_name, manifest.package_version));
+                        }
+                    } else if ext == "json" {
+                        let manifest = self.parse_chocolatey_manifest(&path.to_string_lossy())?;
+                        if manifest.id.to_lowercase().contains(&query.to_lowercase()) {
+                            results.push((manifest.id, manifest.version));
                         }
                     }
-                },
-                Err(e) => eprintln!("{}", format!("Error checking for updates for {}: {}", app.name, e).red()),
+                }
             }
-            pb.inc(1);
         }
 
-        pb.finish_with_message("Update check completed");
-        Ok(())
-    }
-
-    pub fn add_repo(&mut self, url: &str, description: Option<&str>) -> Result<()> {
-        let repo = Repository::new(url, description);
-        self.repos.push(repo);
-        self.config.repos.push(url.to_string());
-        self.config.save()?;
-        println!("{}", format!("Added repository: {}", url).green());
-        Ok(())
-    }
-
-    pub fn remove_repo(&mut self, url: &str) -> Result<()> {
-        self.repos.retain(|r| r.url != url);
-        self.config.repos.retain(|r| r != url);
-        self.config.save()?;
-        println!("{}", format!("Removed repository: {}", url).yellow());
         Ok(())
     }
 }
 
-fn main() -> Result<()> {
-    let mut get = Get::new()?;
-    
-    match std::env::args().nth(1).as_deref() {
-        Some("search") => {
-            let app_name = std::env::args().nth(2).expect("Provide an app name");
-            println!("{}", format!("Searching for {}...", app_name).cyan().bold());
-            match get.search(&app_name) {
-                Ok(apps) => {
-                    if apps.is_empty() {
-                        println!("{}", "No applications found.".yellow());
-                    } else {
-                        for app in apps {
-                            println!("{} ({}):\n    {}", 
-                                app.name.green().bold(), 
-                                app.version.blue(),
-                                app.description.as_deref().unwrap_or("No description available").italic()
-                            );
-                        }
-                    }
-                },
-                Err(e) => eprintln!("{}", format!("Error searching for applications: {}", e).red()),
-            }
-        }
-        Some("install") => {
-            let app_name = std::env::args().nth(2).expect("Provide an app name");
-            match get.install(&app_name) {
-                Ok(_) => println!("{}", format!("{} installed successfully", app_name).green().bold()),
-                Err(e) => eprintln!("{}", format!("Error installing {}: {}", app_name, e).red()),
-            }
-        }
-        Some("uninstall") => {
-            let app_name = std::env::args().nth(2).expect("Provide an app name");
-            match get.uninstall(&app_name) {
-                Ok(_) => println!("{}", format!("{} uninstalled successfully", app_name).green().bold()),
-                Err(e) => eprintln!("{}", format!("Error uninstalling {}: {}", app_name, e).red()),
-            }
-        }
-        Some("list") => {
-            println!("{}", "Installed applications:".cyan().bold());
-            for app in get.list() {
-                println!("{} ({})", app.name.green(), app.version.blue());
-            }
-        }
-        Some("update") => {
-            match get.update() {
-                Ok(_) => println!("{}", "All applications updated successfully".green().bold()),
-                Err(e) => eprintln!("{}", format!("Error updating applications: {}", e).red()),
-            }
-        }
-        Some("add") => {
-            let url = std::env::args().nth(2).expect("Provide a repo URL");
-            let description = std::env::args().nth(3);
-            match get.add_repo(&url, description.as_deref()) {
-                Ok(_) => println!("{}", format!("Repository {} added successfully", url).green().bold()),
-                Err(e) => eprintln!("{}", format!("Error adding repository {}: {}", url, e).red()),
-            }
-        }
-        Some("remove") => {
-            let url = std::env::args().nth(2).expect("Provide a repo URL");
-            match get.remove_repo(&url) {
-                Ok(_) => println!("{}", format!("Repository {} removed successfully", url).green().bold()),
-                Err(e) => eprintln!("{}", format!("Error removing repository {}: {}", url, e).red()),
-            }
-        }
-        _ => {
-            println!("{}", "Usage: get <command> [args]".cyan());
-            println!("{}", "Commands:".yellow());
-            println!("  search <app-name>     : Search for an application");
-            println!("  install <app-name>    : Install an application");
-            println!("  uninstall <app-name>  : Uninstall an application");
-            println!("  list                  : List installed applications");
-            println!("  update                : Update all installed applications");
-            println!("  add <repo-url> [desc] : Add a repository");
-            println!("  remove <repo-url>     : Remove a repository");
+pub fn first_is_greater(first: &str, second: &str) -> bool {
+    let first_parts = first.split('.').collect::<Vec<&str>>();
+    let second_parts = second.split('.').collect::<Vec<&str>>();
+    first_parts[0] > second_parts[0]
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Launch {
+    pub mode: LaunchMode,
+    pub args: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub enum LaunchMode {
+    Install(Vec<String>),
+    Uninstall(Vec<String>),
+    List,
+    Add(AddMode),
+    Remove(RemoveMode),
+    Search(String),
+    Update(Option<String>),
+    Set(SetMode),
+    Help,
+    Version,
+    #[default]
+    None,
+}
+
+#[derive(Clone, Debug)]
+pub enum AddMode {
+    Repo(String),
+    App(Vec<String>),
+}
+
+#[derive(Clone, Debug)]
+pub enum RemoveMode {
+    Repo(String),
+    App(Vec<String>),
+}
+
+#[derive(Clone, Debug)]
+pub enum SetMode {
+    DownloadDir(PathBuf),
+}
+
+impl Launch {
+    pub fn parse() -> Launch {
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        let (mode, remaining_args) = LaunchMode::parse(&args);
+        Launch {
+            mode,
+            args: remaining_args,
         }
     }
+}
 
-    Ok(())
+impl LaunchMode {
+    pub fn parse(args: &[String]) -> (LaunchMode, Vec<String>) {
+        if args.is_empty() {
+            return (LaunchMode::Help, Vec::new());
+        }
+
+        match args[0].as_str() {
+            "install" | "get" => {
+                if args.len() > 1 {
+                    (LaunchMode::Install(args[1..].to_vec()), Vec::new())
+                } else {
+                    (LaunchMode::Help, Vec::new())
+                }
+            }
+            "uninstall" | "remove" => {
+                if args.len() > 1 {
+                    (LaunchMode::Uninstall(args[1..].to_vec()), Vec::new())
+                } else {
+                    (LaunchMode::Help, Vec::new())
+                }
+            }
+            "list" => (LaunchMode::List, args[1..].to_vec()),
+            "add" => {
+                if args.len() > 2 && args[1] == "repo" {
+                    (
+                        LaunchMode::Add(AddMode::Repo(args[2].clone())),
+                        args[3..].to_vec(),
+                    )
+                } else if args.len() > 1 {
+                    (
+                        LaunchMode::Add(AddMode::App(args[1..].to_vec())),
+                        Vec::new(),
+                    )
+                } else {
+                    (LaunchMode::Help, Vec::new())
+                }
+            }
+            "remove" => {
+                if args.len() > 2 && args[1] == "repo" {
+                    (
+                        LaunchMode::Remove(RemoveMode::Repo(args[2].clone())),
+                        args[3..].to_vec(),
+                    )
+                } else if args.len() > 1 {
+                    (
+                        LaunchMode::Remove(RemoveMode::App(args[1..].to_vec())),
+                        Vec::new(),
+                    )
+                } else {
+                    (LaunchMode::Help, Vec::new())
+                }
+            }
+            "search" => {
+                if args.len() > 1 {
+                    (LaunchMode::Search(args[1].clone()), args[2..].to_vec())
+                } else {
+                    (LaunchMode::Help, Vec::new())
+                }
+            }
+            "update" => {
+                if args.len() > 1 {
+                    (
+                        LaunchMode::Update(Some(args[1].clone())),
+                        args[2..].to_vec(),
+                    )
+                } else {
+                    (LaunchMode::Update(None), Vec::new())
+                }
+            }
+            "set" => {
+                if args.len() > 2 && args[1] == "download-dir" {
+                    (
+                        LaunchMode::Set(SetMode::DownloadDir(PathBuf::from(&args[2]))),
+                        args[3..].to_vec(),
+                    )
+                } else {
+                    (LaunchMode::Help, Vec::new())
+                }
+            }
+            "help" => (LaunchMode::Help, args[1..].to_vec()),
+            "version" => (LaunchMode::Version, args[1..].to_vec()),
+            _ => (LaunchMode::Install(args.to_vec()), Vec::new()), // Assume it's an app name if not recognized
+        }
+    }
+}
+
+impl Get {
+    pub fn run(&mut self, launch: Launch) -> Result<()> {
+        match launch.mode {
+            LaunchMode::Install(apps) => {
+                for app in apps {
+                    match self.install_app(&app) {
+                        Ok(_) => println!("{} installed successfully", app.green()),
+                        Err(e) => println!("Failed to install {}: {}", app.red(), e),
+                    }
+                }
+            }
+            LaunchMode::Uninstall(apps) => {
+                for app in apps {
+                    match self.uninstall_app(&app) {
+                        Ok(_) => println!("{} uninstalled successfully", app.green()),
+                        Err(e) => println!("Failed to uninstall {}: {}", app.red(), e),
+                    }
+                }
+            }
+            LaunchMode::List => {
+                self.list_installed_apps()?;
+            }
+            LaunchMode::Add(add_mode) => match add_mode {
+                AddMode::Repo(repo) => {
+                    self.config.repos.push(repo);
+                    self.config.save()?;
+                    println!("Repository added successfully");
+                }
+                AddMode::App(apps) => {
+                    for app in apps {
+                        match self.install_app(&app) {
+                            Ok(_) => println!("{} installed successfully", app.green()),
+                            Err(e) => println!("Failed to install {}: {}", app.red(), e),
+                        }
+                    }
+                }
+            },
+            LaunchMode::Remove(remove_mode) => match remove_mode {
+                RemoveMode::Repo(repo) => {
+                    self.config.repos.retain(|r| r != &repo);
+                    self.config.save()?;
+                    println!("Repository removed successfully");
+                }
+                RemoveMode::App(apps) => {
+                    for app in apps {
+                        match self.uninstall_app(&app) {
+                            Ok(_) => println!("{} uninstalled successfully", app.green()),
+                            Err(e) => println!("Failed to uninstall {}: {}", app.red(), e),
+                        }
+                    }
+                }
+            },
+            LaunchMode::Search(query) => {
+                self.search(&query)?;
+            }
+            LaunchMode::Update(app) => match app {
+                Some(app_name) => {
+                    // match self.update_app(
+                    //     &app_name,
+                    //     self.installed_apps.get(&app_name).unwrap_or(&String::new()),
+                    // ) {
+                    //     Ok(_) => println!("{} updated successfully", app_name.green()),
+                    //     Err(e) => println!("Failed to update {}: {}", app_name.red(), e),
+                    // }
+                }
+                None => self.update_all()?,
+            },
+            LaunchMode::Set(set_mode) => match set_mode {
+                SetMode::DownloadDir(path) => {
+                    self.config.download_dir = path;
+                    self.config.save()?;
+                    println!("Download directory updated successfully");
+                }
+            },
+            LaunchMode::Help => {
+                self.print_help();
+            }
+            LaunchMode::Version => {
+                println!("get version 1.0.0");
+            }
+            LaunchMode::None => {
+                println!("No valid command provided. Use 'get help' for usage information.");
+            }
+        }
+        Ok(())
+    }
+
+    fn install_app(&mut self, app_name: &str) -> Result<()> {
+        let manifest_path = self.find_manifest(app_name)?;
+        self.install_from_manifest(&manifest_path.to_string_lossy())
+    }
+
+    fn uninstall_app(&mut self, app_name: &str) -> Result<()> {
+        let manifest_path = self.find_manifest(app_name)?;
+        self.uninstall_from_manifest(&manifest_path.to_string_lossy())
+    }
+
+    fn print_help(&self) {
+        minimo::set_max_width(60);
+        println!("");
+        Banner::new("superget").show(gray_dim);
+        println!("");
+        divider_vibrant();
+        minimo::show_wrapped!(
+        gray_dim, "you can search for apps using ",yellow_bold, "get find <app-name>",
+        gray_dim, "or directly install known apps using ",yellow_bold, "get install <app-name>",
+        gray_dim, "or even shorter ",yellow_bold, "get <app-name>",gray_dim,". no matter the app you are looking for is on winget/chocolatey/scoop/github get will find it for you."
+
+       );
+        divider();
+    }
+}
+use minimo::*;
+fn main() -> Result<()> {
+    let mut get = Get::new()?;
+    let launch = Launch::parse();
+    get.run(launch)
 }

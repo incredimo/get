@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Robust 3D Rotatable Space with Geometric Shapes</title>
+    <title>Audio Reactive 3D Space with Geometric Shapes</title>
     <style>
         body, html {
             margin: 0;
@@ -19,10 +19,15 @@
 </head>
 <body>
     <canvas id="spaceCanvas"></canvas>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <!-- <script src="./jquery.mousewheel.js"></script>
+    <script src="./ImprovedNoise.js"></script>
+    <script src="./Visualizer.js"></script> -->
+    <!-- <script src="./main.js"></script> -->
     <script>
         const canvas = document.getElementById('spaceCanvas');
         const ctx = canvas.getContext('2d');
- 
 
         let width = canvas.width = window.innerWidth;
         let height = canvas.height = window.innerHeight;
@@ -30,8 +35,8 @@
         const particles = [];
         const shapes = [];
         const particleCount = 3000;
-        const shapeCount = 10;
-        let speed = 0;
+        const shapeCount = 5;
+        let speed = 1;
         const maxSpeed = 30; // Maximum speed limit
         const speedIncrement = 0.5; // Speed change per wheel event
 
@@ -39,6 +44,8 @@
         let rotationY = 0;
         let isDragging = false;
         let lastMouseX, lastMouseY;
+
+        
 
         class Particle {
             constructor() {
@@ -63,9 +70,15 @@
 
             update() {
                 this.z -= speed;
-                if (this.z < -1000 || this.z > 3000) {
+                if (this.z < -1000 || this.z > 10000) {
                     this.reset();
                 }
+
+                // React to audio data
+                const audioValue = frequencyData[Math.floor(Math.random() * frequencyData.length)];
+                const scaleFactor = audioValue / 256;
+                this.x += (Math.random() - 0.5) * 10 * scaleFactor;
+                this.y += (Math.random() - 0.5) * 10 * scaleFactor;
             }
 
             draw() {
@@ -121,40 +134,27 @@
 
                 switch (this.type) {
                     case 0:
-                        //draw a circular portal like shape with multiple circles
+                        ctx.strokeRect(x - size/2, y - size/2, size, size);
+                        break;
+                    case 1:
                         ctx.beginPath();
                         ctx.arc(x, y, size/2, 0, Math.PI * 2);
                         ctx.stroke();
-                        ctx.fill();
-                        ctx.fillStyle = this.color;
-                        ctx.fill();
-                        //next circle
+                        break;
+                    case 2:
                         ctx.beginPath();
-                        ctx.arc(x, y, size/2, 0, Math.PI * 2);
+                        ctx.moveTo(x, y - size/2);
+                        ctx.lineTo(x - size/2, y + size/2);
+                        ctx.lineTo(x + size/2, y + size/2);
+                        ctx.closePath();
                         ctx.stroke();
-                        ctx.fill();
-                        ctx.fillStyle = this.color;
-                        ctx.fill();
-                        //next circle
-                        ctx.beginPath();
-                        ctx.arc(x, y, size/2, 0, Math.PI * 2);
-                        ctx.stroke();
-                        ctx.fill();
-                        ctx.fillStyle = this.color;
-                        ctx.fill(); 
                         break;
                 }
             }
         }
 
-        const MAX_ROTATION = 0.1; // Maximum rotation speed
-
         function rotatePoint(x, y, z, ax, ay) {
             let rx, ry, rz;
-
-            // Limit rotation speed
-            ax = Math.max(-MAX_ROTATION, Math.min(MAX_ROTATION, ax));
-            ay = Math.max(-MAX_ROTATION, Math.min(MAX_ROTATION, ay));
 
             ry = y * Math.cos(ax) - z * Math.sin(ax);
             rz = y * Math.sin(ax) + z * Math.cos(ax);
@@ -172,27 +172,61 @@
             for (let i = 0; i < shapeCount; i++) {
                 shapes.push(new Shape());
             }
+            // setupAudio();
         }
 
-        function animate() {
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
-            ctx.fillRect(0, 0, width, height);
+        // function setupAudio() {
+        //     audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        //     analyser = audioContext.createAnalyser();
+        //     analyser.fftSize = 256;
+        //     const bufferLength = analyser.frequencyBinCount;
+        //     frequencyData = new Uint8Array(bufferLength);
 
-            [...particles, ...shapes].forEach(object => {
-                let rotated = rotatePoint(object.x, object.y, object.z, rotationX, rotationY);
-                object.x = rotated.x;
-                object.y = rotated.y;
-                object.z = rotated.z;
-                object.update();
-                object.draw();
-            });
+        //     navigator.mediaDevices.getUserMedia({ audio: true })
+        //         .then(stream => {
+        //             const source = audioContext.createMediaStreamSource(stream);
+        //             source.connect(analyser);
+        //             animate();
+        //             reactToAudio(analyser);
+        //         })
+        //         .catch(err => {
+        //             console.error('Error accessing audio stream:', err);
+        //         });
+        // }
 
-            rotationX *= 0.95;
-            rotationY *= 0.95;
-            speed *= 0.98; // Gradually decrease speed over time
 
-            requestAnimationFrame(animate);
-        }
+        // function reactToAudio(analyser) {
+        //     const frequencyData = new Uint8Array(analyser.frequencyBinCount);
+        //     analyser.getByteFrequencyData(frequencyData);
+        //     for (let i = 0; i < frequencyData.length; i++) {
+        //         particles[i].x += (Math.random() - 0.5) * 10 * frequencyData[i] / 256;
+        //         particles[i].y += (Math.random() - 0.5) * 10 * frequencyData[i] / 256;
+        //     }
+
+            
+        // }
+
+        // function animate() {
+        //     analyser.getByteFrequencyData(frequencyData);
+
+        //     ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+        //     ctx.fillRect(0, 0, width, height);
+
+        //     [...particles, ...shapes].forEach(object => {
+        //         let rotated = rotatePoint(object.x, object.y, object.z, rotationX, rotationY);
+        //         object.x = rotated.x;
+        //         object.y = rotated.y;
+        //         object.z = rotated.z;
+        //         object.update();
+        //         object.draw();
+        //     });
+
+        //     rotationX *= 0.95;
+        //     rotationY *= 0.95;
+        //     speed *= 0.98; // Gradually decrease speed over time
+
+        //     requestAnimationFrame(animate);
+        // }
 
         canvas.addEventListener('mousedown', (e) => {
             isDragging = true;
@@ -227,7 +261,6 @@
         }, { passive: false });
 
         init();
-        animate();
     </script>
 </body>
 </html>

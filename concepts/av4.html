@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sexy Audio Reactive Particle Visualizer</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overflow: hidden;
+            background-color: #000;
+        }
+        #info {
+            position: absolute;
+            top: 10px;
+            width: 100%;
+            color: #ffffff;
+            padding: 5px;
+            font-family: Monospace;
+            font-size: 13px;
+            text-align: center;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">Sexy Audio Reactive Particle Visualizer<br/>Click to start</div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        let scene, camera, renderer, analyser, uniforms;
+        let particles, particleSystem;
+        const PARTICLE_COUNT = 5000;
+        const SEPARATION = 30;
+        const AMOUNTX = 50;
+        const AMOUNTY = 50;
+        let mouseX = 0, mouseY = 0;
+        let windowHalfX = window.innerWidth / 2;
+        let windowHalfY = window.innerHeight / 2;
+        let audioContext, source;
+        let noisePos = 0;
+        
+        const ImprovedNoise = function () {
+            var p = [151,160,137,91,90,15,131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,8,99,37,240,21,10,
+                     23,190,6,148,247,120,234,75,0,26,197,62,94,252,219,203,117,35,11,32,57,177,33,88,237,149,56,87,
+                     174,20,125,136,171,168,68,175,74,165,71,134,139,48,27,166,77,146,158,231,83,111,229,122,60,211,
+                     133,230,220,105,92,41,55,46,245,40,244,102,143,54,65,25,63,161,1,216,80,73,209,76,132,187,208, 
+                     89,18,169,200,196,135,130,116,188,159,86,164,100,109,198,173,186,3,64,52,217,226,250,124,123,5,
+                     202,38,147,118,126,255,82,85,212,207,206,59,227,47,16,58,17,182,189,28,42,223,183,170,213,119,
+                     248,152,2,44,154,163,70,221,153,101,155,167,43,172,9,129,22,39,253,19,98,108,110,79,113,224,232,
+                     178,185,112,104,218,246,97,228,251,34,242,193,238,210,144,12,191,179,162,241,81,51,145,235,249,
+                     14,239,107,49,192,214,31,181,199,106,157,184,84,204,176,115,121,50,45,127,4,150,254,138,236,205,
+                     93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180];
+            for (var i=0; i < 256; i++) p[256+i] = p[i];
+            function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+            function lerp(t, a, b) { return a + t * (b - a); }
+            function grad(hash, x, y, z) {
+                var h = hash & 15;
+                var u = h < 8 ? x : y, v = h < 4 ? y : h == 12 || h == 14 ? x : z;
+                return ((h&1) == 0 ? u : -u) + ((h&2) == 0 ? v : -v);
+            }
+            return {
+                noise: function (x, y, z) {
+                    var floorX = Math.floor(x), floorY = Math.floor(y), floorZ = Math.floor(z);
+                    var X = floorX & 255, Y = floorY & 255, Z = floorZ & 255;
+                    x -= floorX; y -= floorY; z -= floorZ;
+                    var xMinus1 = x - 1, yMinus1 = y - 1, zMinus1 = z - 1;
+                    var u = fade(x), v = fade(y), w = fade(z);
+                    var A = p[X]+Y, AA = p[A]+Z, AB = p[A+1]+Z, B = p[X+1]+Y, BA = p[B]+Z, BB = p[B+1]+Z;
+                    return lerp(w, lerp(v, lerp(u, grad(p[AA], x, y, z), 
+                                                   grad(p[BA], xMinus1, y, z)),
+                                          lerp(u, grad(p[AB], x, yMinus1, z),
+                                                   grad(p[BB], xMinus1, yMinus1, z))),
+                                   lerp(v, lerp(u, grad(p[AA+1], x, y, zMinus1),
+                                                   grad(p[BA+1], xMinus1, y, z-1)),
+                                          lerp(u, grad(p[AB+1], x, yMinus1, zMinus1),
+                                                   grad(p[BB+1], xMinus1, yMinus1, zMinus1))));
+                }
+            }
+        };
+
+        const perlin = new ImprovedNoise();
+
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 10000);
+            camera.position.z = 1000;
+
+            renderer = new THREE.WebGLRenderer();
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            // Create particles
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(PARTICLE_COUNT * 3);
+            const colors = new Float32Array(PARTICLE_COUNT * 3);
+
+            let i = 0, j = 0;
+
+            for (let ix = 0; ix < AMOUNTX; ix++) {
+                for (let iy = 0; iy < AMOUNTY; iy++) {
+                    positions[i] = ix * SEPARATION - ((AMOUNTX * SEPARATION) / 2);
+                    positions[i + 1] = 0;
+                    positions[i + 2] = iy * SEPARATION - ((AMOUNTY * SEPARATION) / 2);
+
+                    colors[i] = 0;
+                    colors[i + 1] = 0;
+                    colors[i + 2] = 0.5 + Math.random() * 0.5;
+
+                    i += 3;
+                    j++;
+                }
+            }
+
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+            const material = new THREE.PointsMaterial({
+                size: 4,
+                vertexColors: true,
+                blending: THREE.AdditiveBlending,
+                transparent: true,
+                sizeAttenuation: false
+            });
+
+            particles = new THREE.Points(geometry, material);
+            scene.add(particles);
+
+            // Audio setup
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            analyser = audioContext.createAnalyser();
+            analyser.fftSize = 1024;
+
+            navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+                .then(stream => {
+                    source = audioContext.createMediaStreamSource(stream);
+                    source.connect(analyser);
+                })
+                .catch(err => console.error('Microphone access denied:', err));
+
+            document.addEventListener('mousemove', onDocumentMouseMove, false);
+            window.addEventListener('resize', onWindowResize, false);
+        }
+
+        function onDocumentMouseMove(event) {
+            mouseX = event.clientX - windowHalfX;
+            mouseY = event.clientY - windowHalfY;
+        }
+
+        function onWindowResize() {
+            windowHalfX = window.innerWidth / 2;
+            windowHalfY = window.innerHeight / 2;
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            render();
+        }
+
+        function render() {
+            const time = Date.now() * 0.00005;
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            analyser.getByteFrequencyData(dataArray);
+
+            camera.position.x += (mouseX - camera.position.x) * 0.05;
+            camera.position.y += (-mouseY - camera.position.y) * 0.05;
+            camera.lookAt(scene.position);
+
+            const positions = particles.geometry.attributes.position.array;
+            const colors = particles.geometry.attributes.color.array;
+            let i = 0, j = 0;
+
+            for (let ix = 0; ix < AMOUNTX; ix++) {
+                for (let iy = 0; iy < AMOUNTY; iy++) {
+                    const audioIndex = Math.floor(j / PARTICLE_COUNT * bufferLength);
+                    const audioValue = dataArray[audioIndex] / 256.0;
+
+                    positions[i + 1] = (Math.sin((ix + time) * 0.3) * 50) +
+                        (Math.sin((iy + time) * 0.5) * 50) +
+                        (perlin.noise(ix / 50, iy / 50, time) * 100 * audioValue);
+
+                    colors[i] = audioValue;
+                    colors[i + 1] = 0.5 * audioValue;
+                    colors[i + 2] = 0.5 + (1 - audioValue) * 0.5;
+
+                    i += 3;
+                    j++;
+                }
+            }
+
+            particles.geometry.attributes.position.needsUpdate = true;
+            particles.geometry.attributes.color.needsUpdate = true;
+
+            noisePos += 0.005;
+            renderer.render(scene, camera);
+        }
+
+        document.addEventListener('click', () => {
+            if (audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+            if (!source) {
+                init();
+                animate();
+                document.getElementById('info').style.display = 'none';
+            }
+        });
+    </script>
+</body>
+</html>

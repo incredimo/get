@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 lazy_static = "1.4.0"
-minimo =  { version = "0.4.3", features = ["async"] }
+minimo =  { version = "0.5.12", features = ["async"] }
 reqwest = { version = "0.12.4", features = ["stream", "json", "blocking"] }
 serde = { version = "1.0.202", features = ["derive"] }
 serde_json = "1.0.117"
@@ -23,3 +23,4 @@ url = "2.5.2"
 duct = "0.13.7"
 colored = "2.1.0"
 indicatif = "0.17.8"
+yaml-rust = "0.4.5"
