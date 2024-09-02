@@ -1,5 +1,5 @@
 # Variables
-$RepoUrl = "incredimo/textra" # Replace with your GitHub repository
+$RepoUrl = "u-tra/textra" # Replace with your GitHub repository
 $AppName = "textra" # Replace with the name of your application
 
 # Color variables
