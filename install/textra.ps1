@@ -49,8 +49,13 @@ function Download-LatestRelease {
     $apiUrl = "https://api.github.com/repos/$Repo/releases/latest"
     $releaseData = Invoke-RestMethod -Uri $apiUrl -Headers @{Accept = "application/vnd.github.v3+json"}
 
-    if ($releaseData -eq $null) {
+    if (-not $releaseData) {
         Print-Colored "Failed to fetch the latest release data." $RED
+        exit 1
+    }
+
+    if ($releaseData.assets.Count -eq 0) {
+        Print-Colored "No assets found in the latest release." $RED
         exit 1
     }
 
@@ -83,11 +88,11 @@ function Run-DownloadedFile {
 
 # Display banner
 Print-Colored "
- /██   /██  /██████      /██████   /███████
-|  ██ /██/ /██__  ██    /██__  ██ /██_____/
+ |██   |██  |██████      |██████   |███████
+|  ██ |██/ |██__  ██    |██__  ██ |██_____/
  \  ████/ | ██  \ ██   | ██  \__/|  ██████ 
   >██  ██ | ██  | ██   | ██       \____  ██
- /██/\  ██|  ██████//██| ██       /███████/
+ |██/\  ██|  ██████|██| ██       |███████/
 |__/  \__/ \______/|__/|__/      |_______/ 
 ---------------------------------------------
  github.com/incredimo | aghil@xo.rs | xo.rs
