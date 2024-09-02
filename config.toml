@@ -1,2 +1,2 @@
-repos = ["./sample.json"]
-download_dir = "C:\\Users\\nobody\\Downloads"
+repos = ["./sample.json", "C:/repo/winget-pkgs"]
+download_dir = 'C:\Users\nobody\Downloads'

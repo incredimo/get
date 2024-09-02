@@ -905,7 +905,7 @@ impl Get {
 
     fn install_app(&mut self, app_name: &str) -> Result<()> {
         let manifest_path = self.find_manifest(app_name)?;
-        self.install_from_manifest(&manifest_path.to_string_lossy())
+        self.install_from_manifest(&manifest_path.to_string_lossy()) 
     }
 
     fn uninstall_app(&mut self, app_name: &str) -> Result<()> {
