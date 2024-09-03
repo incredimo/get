@@ -1,6 +1,7 @@
 # Variables
-$RepoUrl = "u-tra/textra" # Replace with your GitHub repository
-$AppName = "textra" # Replace with the name of your application
+$DownloadUrl = "https://github.com/u-tra/textra/raw/master/release/textra.exe"
+$FileName = "textra.exe"
+$AppName = "textra" # Name of your application
 
 # Color variables
 $RED = "`e[0;31m"
@@ -18,70 +19,29 @@ function Print-Colored {
     Write-Host "$Color$Message$NC"
 }
 
-# Function to check if a command exists
-function Command-Exists {
+# Function to download the file
+function Download-File {
     param (
-        [string]$Command
+        [string]$Url,
+        [string]$OutFile
     )
-    $null -ne (Get-Command $Command -ErrorAction SilentlyContinue)
-}
-
-# Function to run a command with or without elevation, based on user privileges
-function Run-Command {
-    param (
-        [string]$Command,
-        [string[]]$Args
-    )
-    if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
-        Start-Process -FilePath "powershell.exe" -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"& { $Command $($Args -join ' ') }`"" -Verb RunAs
-    } else {
-        & $Command @Args
-    }
-}
-
-# Function to download the latest release from a GitHub repository
-function Download-LatestRelease {
-    param (
-        [string]$Repo
-    )
-
-    # Fetch the latest release data from GitHub API
-    $apiUrl = "https://api.github.com/repos/$Repo/releases/latest"
-    $releaseData = Invoke-RestMethod -Uri $apiUrl -Headers @{Accept = "application/vnd.github.v3+json"}
-
-    if (-not $releaseData) {
-        Print-Colored "Failed to fetch the latest release data." $RED
-        exit 1
-    }
-
-    if ($releaseData.assets.Count -eq 0) {
-        Print-Colored "No assets found in the latest release." $RED
-        exit 1
-    }
-
-    $downloadUrl = $releaseData.assets[0].browser_download_url
-    $fileName = $releaseData.assets[0].name
-
-    Print-Colored "Downloading the latest release: $fileName..." $CYAN
-    Invoke-WebRequest -Uri $downloadUrl -OutFile $fileName
+    Print-Colored "Downloading $OutFile from $Url..." $CYAN
+    Invoke-WebRequest -Uri $Url -OutFile $OutFile
     if ($LASTEXITCODE -ne 0) {
-        Print-Colored "Failed to download the release." $RED
+        Print-Colored "Failed to download $OutFile." $RED
         exit 1
     }
-
-    return $fileName
 }
 
-# Function to run the downloaded file
+# Function to run the downloaded file with "install" argument
 function Run-DownloadedFile {
     param (
         [string]$FileName
     )
-
-    Print-Colored "Running the downloaded file: $FileName..." $CYAN
-    Start-Process -FilePath $FileName -Wait
+    Print-Colored "Running $FileName with argument 'install'..." $CYAN
+    Start-Process -FilePath $FileName -ArgumentList "install" -Wait
     if ($LASTEXITCODE -ne 0) {
-        Print-Colored "Failed to run the downloaded file." $RED
+        Print-Colored "Failed to run $FileName." $RED
         exit 1
     }
 }
@@ -89,11 +49,11 @@ function Run-DownloadedFile {
 # Display banner
 Print-Colored "
  |██   |██  |██████      |██████   |███████
-|  ██ |██/ |██__  ██    |██__  ██ |██_____/
- \  ████/ | ██  \ ██   | ██  \__/|  ██████ 
-  >██  ██ | ██  | ██   | ██       \____  ██
+|  ██ |██/ |██  ██    |██  ██ |██__/
+ \  ████/ | ██  \ ██   | ██  \/|  ██████
+  >██  ██ | ██  | ██   | ██       \__  ██
  |██/\  ██|  ██████|██|| ██       |███████/
-|__/  \__/ \______/|__/|__/      |_______/ 
+|/  \/ \__/|/|/      |___/
 ---------------------------------------------
  github.com/incredimo | aghil@xo.rs | xo.rs
 ---------------------------------------------
@@ -102,7 +62,6 @@ INSTALLING $AppName ON WINDOWS
 " $CYAN
 
 # Start the process
-Print-Colored "Fetching the latest release from $RepoUrl..." $CYAN
-$fileName = Download-LatestRelease -Repo $RepoUrl
-Run-DownloadedFile -FileName $fileName
+Download-File -Url $DownloadUrl -OutFile $FileName
+Run-DownloadedFile -FileName $FileName
 Print-Colored "$AppName installation completed successfully." $GREEN
