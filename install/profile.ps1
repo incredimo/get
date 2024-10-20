@@ -1,24 +1,87 @@
 <#
 .SYNOPSIS
-    Installs a custom PowerShell profile from a specified URL.
+    Installs a custom PowerShell profile from a specified URL with enhanced logging and banner.
 
 .DESCRIPTION
     This script downloads a PowerShell profile script from a given URL and installs it
-    to the current user's PowerShell profile path. If a profile already exists, it creates
-    a timestamped backup before overwriting it. The script includes comprehensive logging
-    and error handling to ensure a smooth installation process.
+    to the current user's PowerShell profile path. It includes a colorful banner, 
+    comprehensive logging with timestamps and colors, and backups of any existing profiles 
+    to prevent data loss.
 
 .NOTES
     - URL of the custom profile: https://xo.rs/profile.ps1
     - Ensure you have an active internet connection.
-    - Git is not required for installation, but the profile may utilize Git commands.
     - Run this script with appropriate permissions to modify your PowerShell profile.
 
 .EXAMPLE
     .\Install-CustomProfile.ps1
 #>
 
-# Function to write log messages with timestamps and colors
+# ---------------------------
+# Color Variables
+# ---------------------------
+$RED = "`e[0;31m"
+$GREEN = "`e[0;32m"
+$YELLOW = "`e[0;33m"
+$CYAN = "`e[0;36m"
+$NC = "`e[0m" # No Color
+
+# ---------------------------
+# Function to Print Colored Text
+# ---------------------------
+function Print-Colored {
+    param (
+        [string]$Message,
+        [string]$Color
+    )
+    Write-Host "$Color$Message$NC"
+}
+
+# ---------------------------
+# Function to Check if a Command Exists
+# ---------------------------
+function Command-Exists {
+    param (
+        [string]$Command
+    )
+    $null -ne (Get-Command $Command -ErrorAction SilentlyContinue)
+}
+
+# ---------------------------
+# Function to Run a Command with or without Elevation
+# ---------------------------
+function Run-Command {
+    param (
+        [string]$Command,
+        [string[]]$Args
+    )
+    if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+        Start-Process -FilePath "powershell.exe" -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"& { $Command $($Args -join ' ') }`"" -Verb RunAs
+    } else {
+        & $Command @Args
+    }
+}
+
+# ---------------------------
+# Display Banner
+# ---------------------------
+Print-Colored @"
+ /██   /██  /██████      /██████   /███████
+|  ██ /██/ /██__  ██    /██__  ██ /██_____/
+ \  ████/ | ██  \ ██   | ██  \__/|  ██████ 
+  >██  ██ | ██  | ██   | ██       \____  ██
+ /██/\  ██|  ██████//██| ██       /███████/
+|__/  \__/ \______/|__/|__/      |_______/ 
+---------------------------------------------
+ github.com/incredimo | aghil@xo.rs | xo.rs
+---------------------------------------------
+INSTALLING CUSTOM POWERHELL PROFILE
+---------------------------------------------
+"@ $CYAN
+
+# ---------------------------
+# Function to Write Log Messages with Timestamps
+# ---------------------------
 function Write-Log {
     param (
         [Parameter(Mandatory = $true)]
@@ -29,19 +92,25 @@ function Write-Log {
         [string]$Color = "White"
     )
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    Write-Host "[$timestamp] $Message" -ForegroundColor $Color
+    Write-Host "[$timestamp] $($Color): $Message$NC" -ForegroundColor $Color
 }
 
+# ---------------------------
 # Variables
+# ---------------------------
 $profileUrl = "https://xo.rs/profile.ps1"
 $profilePath = $PROFILE
 $profileDirectory = Split-Path -Path $profilePath -Parent
 $backupDirectory = Join-Path -Path $profileDirectory -ChildPath "Backups"
 
+# ---------------------------
 # Start Installation
+# ---------------------------
 Write-Log "Starting installation of the custom PowerShell profile..." -Color "Cyan"
 
-# Ensure the profile directory exists
+# ---------------------------
+# Ensure the Profile Directory Exists
+# ---------------------------
 if (-not (Test-Path -Path $profileDirectory)) {
     try {
         New-Item -Path $profileDirectory -ItemType Directory -Force | Out-Null
@@ -56,7 +125,9 @@ else {
     Write-Log "Profile directory exists at '$profileDirectory'." -Color "Green"
 }
 
-# Backup existing profile if it exists
+# ---------------------------
+# Backup Existing Profile if it Exists
+# ---------------------------
 if (Test-Path -Path $profilePath) {
     try {
         # Ensure the backup directory exists
@@ -80,7 +151,9 @@ else {
     Write-Log "No existing profile found. Proceeding with installation." -Color "Yellow"
 }
 
-# Download the custom profile
+# ---------------------------
+# Download the Custom Profile
+# ---------------------------
 $tempProfilePath = Join-Path -Path $env:TEMP -ChildPath "profile.ps1"
 
 try {
@@ -93,13 +166,17 @@ catch {
     exit 1
 }
 
-# Validate the downloaded file
+# ---------------------------
+# Validate the Downloaded File
+# ---------------------------
 if (-not (Test-Path -Path $tempProfilePath)) {
     Write-Log "Downloaded profile file not found at '$tempProfilePath'." -Color "Red"
     exit 1
 }
 
-# Write the profile to the profile path
+# ---------------------------
+# Write the Profile to the Profile Path
+# ---------------------------
 try {
     Copy-Item -Path $tempProfilePath -Destination $profilePath -Force
     Write-Log "Custom profile installed to '$profilePath'." -Color "Green"
@@ -109,7 +186,9 @@ catch {
     exit 1
 }
 
-# Clean up the temporary file
+# ---------------------------
+# Clean Up the Temporary File
+# ---------------------------
 try {
     Remove-Item -Path $tempProfilePath -Force
     Write-Log "Removed temporary profile file at '$tempProfilePath'." -Color "Green"
@@ -118,7 +197,9 @@ catch {
     Write-Log "Failed to remove temporary profile file at '$tempProfilePath'. Error: $_" -Color "Yellow"
 }
 
-# Inform the user to reload the profile or restart PowerShell
+# ---------------------------
+# Inform the User to Reload the Profile or Restart PowerShell
+# ---------------------------
 Write-Log "Installation completed successfully." -Color "Green"
 Write-Log "To apply the new profile, either restart PowerShell or run the following command:" -Color "Yellow"
 Write-Host "    . $PROFILE" -ForegroundColor "White"
@@ -127,4 +208,6 @@ Write-Host "    . $PROFILE" -ForegroundColor "White"
 # Uncomment the line below if you want the script to reload the profile automatically
 # . $PROFILE
 
+# ---------------------------
 # End of Script
+# ---------------------------
