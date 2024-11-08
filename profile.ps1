@@ -146,11 +146,11 @@ function Show-CustomBanner {
         $coloredArt += "`n"
     }
 
-    $osVersion = (Get-WmiObject -Class Win32_OperatingSystem).Version
+    $osVersion = $env:OS
     $powershellVersion = $PSVersionTable.PSVersion
     $coloredArt += "$env:COMPUTERNAME | $env:USERNAME | $(Get-Date -Format 'dd-MM-yyyy hh:mm tt')`n"
-    $coloredArt += "$env:PROCESSOR_ARCHITECTURE | WINDOWS $osVersion | PS $powershellVersion`n"
-    $coloredArt += "INCREDIBLE TIMES ━━━━━━━`n"
+    $coloredArt += "$env:PROCESSOR_ARCHITECTURE | $osVersion | PS $powershellVersion`n"
+    $coloredArt += "BUILD INCREDIBLE THINGS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
  
     Write-Host $coloredArt
 }
