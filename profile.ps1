@@ -61,23 +61,31 @@ function fmt {
     return "`e[38;2;$foreground;48;2;${background}m${text}`e[0m"
 }
 
+$banner = @"
+
+██  ██████      ████  ██████    ██████  ██████    ██  ████████    ██████ 
+██  ██    ██  ██      ██    ██  ██      ██    ██  ██  ██  ██  ██  ██    ██
+██  ██    ██  ██      ██████    ████    ██    ██  ██  ██  ██  ██  ██    ██
+██  ██    ██  ██████  ██    ██  ██████  ██████    ██  ██  ██  ██    ██████  
+"@
+
 function Show-CustomBanner {
     $os_version = [System.Environment]::OSVersion.Version
     $ps_version = $PSVersionTable.PSVersion.ToString()
 
     $asciiArt = @"
-—————————————————————————————————————————————————————
 
-   ███╗   ███╗ ██████╗       NOTHING
-   ████╗ ████║██╔═══██╗      WINDOWS $os_version
-   ██╔████╔██║██║   ██║      POWERSHELL $ps_version
-   ██║╚██╔╝██║██║   ██║
-   ██║ ╚═╝ ██║╚██████╔╝      $(fmt '██' $colors['violet_dark'])$(fmt '██' $colors['violet'])$(fmt '██' $colors['indigo_dark'])$(fmt '██' $colors['indigo'])$(fmt '██' $colors['cyan_dark'])$(fmt '██' $colors['cyan'])$(fmt '██' $colors['green_dark'])$(fmt '██' $colors['green'])$(fmt '██' $colors['yellow_dark'])$(fmt '██' $colors['yellow'])$(fmt '██' $colors['orange_dark'])$(fmt '██' $colors['orange'])$($gray)
-   ╚═╝     ╚═╝ ╚═════╝       $(fmt '██' $colors['red_dark'])$(fmt '██' $colors['red'])$(fmt '██' $colors['pink_dark'])$(fmt '██' $colors['pink'])$(fmt '██' $colors['purple_dark'])$(fmt '██' $colors['purple'])$(fmt '██' $colors['grey_dark'])$(fmt '██' $colors['grey'])$(fmt '██' $colors['brown_dark'])$(fmt '██' $colors['brown'])$(fmt '██' $colors['white_dark'])$(fmt '██' $colors['white'])$($gray)
+██ ██████     ████ ██████   ██████ ██████   ██ ████████   ██████ 
+██ ██    ██ ██     ██    ██ ██     ██    ██ ██ ██  ██  ██ ██    ██
+██ ██    ██ ██     ██████   ████   ██    ██ ██ ██  ██  ██ ██    ██
+██ ██    ██ ██████ ██    ██ ██████ ██████   ██ ██  ██  ██   ██████  
+
+$(fmt '██' $colors['violet_dark'])$(fmt '██' $colors['violet'])$(fmt '██' $colors['indigo_dark'])$(fmt '██' $colors['indigo'])$(fmt '██' $colors['cyan_dark'])$(fmt '██' $colors['cyan'])$(fmt '██' $colors['green_dark'])$(fmt '██' $colors['green'])$(fmt '██' $colors['yellow_dark'])$(fmt '██' $colors['yellow'])$(fmt '██' $colors['orange_dark'])$(fmt '██' $colors['orange'])$($gray)
+$(fmt '██' $colors['red_dark'])$(fmt '██' $colors['red'])$(fmt '██' $colors['pink_dark'])$(fmt '██' $colors['pink'])$(fmt '██' $colors['purple_dark'])$(fmt '██' $colors['purple'])$(fmt '██' $colors['grey_dark'])$(fmt '██' $colors['grey'])$(fmt '██' $colors['brown_dark'])$(fmt '██' $colors['brown'])$(fmt '██' $colors['white_dark'])$(fmt '██' $colors['white'])$($gray)
 
 —————————————————————————————————————————————————————
 "@
-    Write-Host $asciiArt -ForegroundColor DarkGray
+    Write-Host $asciiArt -ForegroundColor Gray
 }
 
 Show-CustomBanner
@@ -308,7 +316,7 @@ function history {
     Get-History
 }
 
-# refresh the terminal, reload the profile
+# Refresh the terminal, reload the profile
 function refresh {
     Clear-Host
     . $PROFILE
@@ -497,11 +505,9 @@ function wipe {
 
 # Alias for clear screen as 'c'
 Set-Alias -Name c -Value clear
- 
 
 # Alias for winget as 'w'
 Set-Alias -Name w -Value winget
- 
 
 # Function to synchronize profile.ps1 with the repository
 function sync {
@@ -561,4 +567,136 @@ function sync {
     else {
         Write-Log "Repository not found at '$repoPath'." -Color "Red"
     }
+}
+
+function Replace {
+    <#
+    .SYNOPSIS
+        Recursively replaces text in ALL file/folder names and file contents.
+
+    .DESCRIPTION
+        A comprehensive search and replace function that:
+        - Renames files and folders containing the search text
+        - Replaces occurrences in ALL file contents
+        - No automatic exclusions or restrictions
+        - Uses profile's color scheme for output
+        - Supports regex pattern matching
+
+    .PARAMETER SearchText
+        The text or pattern to search for.
+
+    .PARAMETER ReplaceText
+        The text to replace the SearchText with.
+
+    .PARAMETER Path
+        Optional. The starting path for the search and replace operation.
+        Defaults to current directory.
+
+    .PARAMETER ExcludeExtensions
+        Optional. File extensions to exclude if desired.
+        Example: @("*.exe", "*.dll")
+    #>
+    param(
+        [Parameter(Mandatory=$true, Position=0)]
+        [string]$SearchText,
+        
+        [Parameter(Mandatory=$true, Position=1)]
+        [string]$ReplaceText,
+        
+        [Parameter(Mandatory=$false, Position=2)]
+        [string]$Path = (Get-Location).Path,
+        
+        [Parameter(Mandatory=$false)]
+        [string[]]$ExcludeExtensions = @()
+    )
+    
+    $divider = "─" * 50
+    Write-Host (fmt $divider $colors['pink_bright'])
+ 
+    Write-Host (fmt "• search: " $colors['grey']) -NoNewline
+    Write-Host (fmt $SearchText $colors['pink_bright'])
+    Write-Host (fmt "• replace: " $colors['grey']) -NoNewline
+    Write-Host (fmt $ReplaceText $colors['cyan_bright'])
+    Write-Host (fmt "• path: " $colors['grey']) -NoNewline
+    Write-Host (fmt $Path $colors['green'])
+    if ($ExcludeExtensions) {
+        Write-Host (fmt "• excluding: " $colors['grey']) -NoNewline
+        Write-Host (fmt ($ExcludeExtensions -join ", ") $colors['yellow'])
+    }
+    Write-Host (fmt $divider $colors['pink_bright'])
+    
+    # Counter for tracking changes
+    $stats = @{
+        RenamedItems = 0
+        UpdatedFiles = 0
+        Errors = 0
+    }
+    
+    # Build file filter if exclusions specified
+    $fileFilter = { $true }
+    if ($ExcludeExtensions) {
+        $fileFilter = {
+            $file = $_
+            return -not ($ExcludeExtensions | Where-Object { $file.Name -like $_ })
+        }
+    }
+    
+    # Rename files and folders
+    Get-ChildItem -Path $Path -Recurse | Where-Object $fileFilter | ForEach-Object {
+        $newName = $_.Name -replace [regex]::Escape($SearchText), $ReplaceText
+        if ($_.Name -ne $newName) {
+            $newPath = Join-Path -Path $_.Directory.FullName -ChildPath $newName
+            if (-not (Test-Path -Path $newPath)) {
+                try {
+                    Rename-Item -Path $_.FullName -NewName $newName -ErrorAction Stop
+                    Write-Host (fmt "✓ " $colors['green']) -NoNewline
+                    Write-Host (fmt "renamed: " $colors['grey']) -NoNewline
+                    Write-Host (fmt $_.Name $colors['pink_bright']) -NoNewline
+                    Write-Host (fmt " → " $colors['grey']) -NoNewline
+                    Write-Host (fmt $newName $colors['cyan_bright'])
+                    $stats.RenamedItems++
+                }
+                catch {
+                    Write-Host (fmt "✗ " $colors['red']) -NoNewline
+                    Write-Host (fmt "Failed to rename: $($_.Name) - $_" $colors['red'])
+                    $stats.Errors++
+                }
+            }
+        }
+    }
+    
+    # Replace file contents
+    Get-ChildItem -Path $Path -File -Recurse | Where-Object $fileFilter | ForEach-Object {
+        try {
+            $content = Get-Content -Path $_.FullName -Raw -ErrorAction Stop
+            if ($null -eq $content) { return }
+            
+            if ($content -match [regex]::Escape($SearchText)) {
+                $newContent = $content -replace [regex]::Escape($SearchText), $ReplaceText
+                [System.IO.File]::WriteAllText($_.FullName, $newContent)
+                Write-Host (fmt "✓ " $colors['green']) -NoNewline
+                Write-Host (fmt "updated: " $colors['grey']) -NoNewline
+                Write-Host (fmt $_.Name $colors['cyan_bright'])
+                $stats.UpdatedFiles++
+            }
+        }
+        catch {
+            Write-Host (fmt "✗ " $colors['red']) -NoNewline
+            Write-Host (fmt "Error processing $($_.Name): $_" $colors['red'])
+            $stats.Errors++
+        }
+    }
+    
+    # Display summary
+    Write-Host (fmt $divider $colors['pink_bright'])
+    Write-Host (fmt "operation summary:" $colors['cyan_bright'])
+    Write-Host (fmt "• items renamed: " $colors['grey']) -NoNewline
+    Write-Host (fmt $stats.RenamedItems $colors['green'])
+    Write-Host (fmt "• files updated: " $colors['grey']) -NoNewline
+    Write-Host (fmt $stats.UpdatedFiles $colors['green'])
+    if ($stats.Errors -gt 0) {
+        Write-Host (fmt "• Errors encountered: " $colors['grey']) -NoNewline
+        Write-Host (fmt $stats.Errors $colors['red'])
+    }
+    Write-Host (fmt $divider $colors['pink_bright'])
 }
