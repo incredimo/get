@@ -70,25 +70,89 @@ $banner = @"
 "@
 
 function Show-CustomBanner {
-    $os_version = [System.Environment]::OSVersion.Version
-    $ps_version = $PSVersionTable.PSVersion.ToString()
+    param(
+        [array]$GradientColors = @(
+            @(230, 230, 230), # Dimmest white
+            @(230, 230, 230),
+            @(230, 230, 230),
+            @(230, 230, 230),
+            @(230, 230, 230),
+            @(230, 230, 230)  # Brightest white
+        ),
+        [array]$RainbowColors = @(
+            @(148, 0, 211),   # Violet
+            @(75, 0, 130),    # Indigo
+            @(0, 127, 255),   # Blue
+            @(0, 255, 0),     # Green
+            @(255, 255, 0),   # Yellow
+            @(255, 127, 0),   # Orange
+            @(255, 0, 0)      # Red
+        )
+    )
 
-    $asciiArt = @"
+    # Helper function to format colored blocks
+    function Format-ColorBlock {
+        param([int]$r, [int]$g, [int]$b)
+        return "$([char]27)[38;2;${r};${g};${b}m██$([char]27)[0m"
+    }
 
-██ ██████     ████ ██████   ██████ ██████   ██ ████████   ██████ 
-██ ██    ██ ██     ██    ██ ██     ██    ██ ██ ██  ██  ██ ██    ██
-██ ██    ██ ██     ██████   ████   ██    ██ ██ ██  ██  ██ ██    ██
-██ ██    ██ ██████ ██    ██ ██████ ██████   ██ ██  ██  ██   ██████  
+    $coloredArt = ""
+    
+    # Pre-generate color blocks
+    $gradientBlocks = $GradientColors | ForEach-Object {
+        Format-ColorBlock -r $_[0] -g $_[1] -b $_[2]
+    }
+    
+    $rainbowBlocks = $RainbowColors | ForEach-Object {
+        Format-ColorBlock -r $_[0] -g $_[1] -b $_[2]
+    }
 
-$(fmt '██' $colors['violet_dark'])$(fmt '██' $colors['violet'])$(fmt '██' $colors['indigo_dark'])$(fmt '██' $colors['indigo'])$(fmt '██' $colors['cyan_dark'])$(fmt '██' $colors['cyan'])$(fmt '██' $colors['green_dark'])$(fmt '██' $colors['green'])$(fmt '██' $colors['yellow_dark'])$(fmt '██' $colors['yellow'])$(fmt '██' $colors['orange_dark'])$(fmt '██' $colors['orange'])$($gray)
-$(fmt '██' $colors['red_dark'])$(fmt '██' $colors['red'])$(fmt '██' $colors['pink_dark'])$(fmt '██' $colors['pink'])$(fmt '██' $colors['purple_dark'])$(fmt '██' $colors['purple'])$(fmt '██' $colors['grey_dark'])$(fmt '██' $colors['grey'])$(fmt '██' $colors['brown_dark'])$(fmt '██' $colors['brown'])$(fmt '██' $colors['white_dark'])$(fmt '██' $colors['white'])$($gray)
+    $banner = @(
+        "██ ██████     ████ ██████   ██████ ██████   ██ ████████   ██████ ",
+        "██ ██    ██ ██     ██    ██ ██     ██    ██ ██ ██  ██  ██ ██    ██",
+        "██ ██    ██ ██     ██████   ████   ██    ██ ██ ██  ██  ██ ██    ██",
+        "██ ██    ██ ██████ ██    ██ ██████ ██████   ██ ██  ██  ██   ██████"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    )
 
-—————————————————————————————————————————————————————
-"@
-    Write-Host $asciiArt -ForegroundColor Gray
+    foreach ($line in $banner) {
+        $pos = 0
+        $blockCount = 0
+        $totalBlocks = ($line | Select-String "██" -AllMatches).Matches.Count
+        
+        while ($pos -lt $line.Length) {
+            if ($pos + 1 -lt $line.Length -and $line.Substring($pos, 2) -eq "██") {
+                if ($blockCount -ge ($totalBlocks - $rainbowBlocks.Count)) {
+                    # Last blocks get rainbow colors
+                    $colorIndex = $blockCount - ($totalBlocks - $rainbowBlocks.Count)
+                    $coloredArt += $rainbowBlocks[$colorIndex]
+                }
+                elseif ($blockCount -lt $gradientBlocks.Count) {
+                    # First blocks get gradient colors
+                    $coloredArt += $gradientBlocks[$blockCount]
+                }
+                else {
+                    # Middle blocks get brightest gradient color
+                    $coloredArt += $gradientBlocks[-1]
+                }
+                $blockCount++
+                $pos += 2
+            }
+            else {
+                $coloredArt += $line[$pos]
+                $pos++
+            }
+        }
+        $coloredArt += "`n"
+    }
+
+    $coloredArt += "$env:COMPUTERNAME - $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')`n"
+ 
+    Write-Host $coloredArt
 }
-
 Show-CustomBanner
+
+    
 
 # Custom prompt
 $pwdLevels = 2
