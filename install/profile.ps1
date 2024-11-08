@@ -1,3 +1,7 @@
+# First line must set output encoding to UTF-8
+$OutputEncoding = [Console]::OutputEncoding = [Text.Encoding]::UTF8
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new()
+
 <#
 .SYNOPSIS
     Installs a custom PowerShell profile from a specified URL with enhanced logging and banner.
