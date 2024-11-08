@@ -18,13 +18,15 @@
 #>
 
 # ---------------------------
-# Color Variables
+# Color Variables with Write-Host compatible formatting
 # ---------------------------
-$RED = "`e[0;31m"
-$GREEN = "`e[0;32m"
-$YELLOW = "`e[0;33m"
-$CYAN = "`e[0;36m"
-$NC = "`e[0m" # No Color
+$colors = @{
+    Red = 'Red'
+    Green = 'Green'
+    Yellow = 'Yellow'
+    Cyan = 'Cyan'
+    White = 'White'
+}
 
 # ---------------------------
 # Function to Print Colored Text
@@ -32,9 +34,9 @@ $NC = "`e[0m" # No Color
 function Print-Colored {
     param (
         [string]$Message,
-        [string]$Color
+        [string]$Color = 'White'
     )
-    Write-Host "$Color$Message$NC"
+    Write-Host $Message -ForegroundColor $Color
 }
 
 # ---------------------------
@@ -63,19 +65,29 @@ function Run-Command {
 }
 
 # ---------------------------
-# Display Banner
+# Function to Display Banner
 # ---------------------------
-Print-Colored @"
+function Show-Banner {
+    $computerName = $env:COMPUTERNAME
+    $userName = $env:USERNAME
+    $currentTime = Get-Date -Format "dd-MM-yyyy hh:mm tt"
+    $processorArch = [System.Environment]::GetEnvironmentVariable("PROCESSOR_ARCHITECTURE")
+    $osVersion = [System.Environment]::OSVersion.Platform
+    $psVersion = $PSVersionTable.PSVersion
+
+    $banner = @"
 
 ██ ██████     ████ ██████   ██████ ██████   ██ ████████   ██████
 ██ ██    ██ ██     ██    ██ ██     ██    ██ ██ ██  ██  ██ ██    ██
 ██ ██    ██ ██     ██████   ████   ██    ██ ██ ██  ██  ██ ██    ██
 ██ ██    ██ ██████ ██    ██ ██████ ██████   ██ ██  ██  ██   ██████
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-DESKTOP-07MDBHS | nobody | 08-11-2024 07:48 PM
-AMD64 | Windows_NT | PS 7.4.6
+$computerName | $userName | $currentTime
+$processorArch | $osVersion | PS $psVersion
 BUILD INCREDIBLE THINGS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-"@ $CYAN
+"@
+    Print-Colored -Message $banner -Color 'Cyan'
+}
 
 # ---------------------------
 # Function to Write Log Messages with Timestamps
@@ -90,7 +102,8 @@ function Write-Log {
         [string]$Color = "White"
     )
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    Write-Host "[$timestamp] $($Color): $Message$NC" -ForegroundColor $Color
+    Write-Host "[$timestamp] " -NoNewline
+    Write-Host $Message -ForegroundColor $Color
 }
 
 # ---------------------------
@@ -104,6 +117,7 @@ $backupDirectory = Join-Path -Path $profileDirectory -ChildPath "Backups"
 # ---------------------------
 # Start Installation
 # ---------------------------
+Show-Banner
 Write-Log "Starting installation of the custom PowerShell profile..." -Color "Cyan"
 
 # ---------------------------
@@ -172,6 +186,18 @@ if (-not (Test-Path -Path $tempProfilePath)) {
     exit 1
 }
 
+try {
+    $fileContent = Get-Content -Path $tempProfilePath -Raw -ErrorAction Stop
+    if ([string]::IsNullOrWhiteSpace($fileContent)) {
+        throw "Downloaded profile file is empty"
+    }
+    Write-Log "Downloaded profile file validated successfully." -Color "Green"
+}
+catch {
+    Write-Log "Failed to validate the downloaded profile. Error: $_" -Color "Red"
+    exit 1
+}
+
 # ---------------------------
 # Write the Profile to the Profile Path
 # ---------------------------
@@ -196,15 +222,69 @@ catch {
 }
 
 # ---------------------------
+# Verify Installation
+# ---------------------------
+if (Test-Path -Path $profilePath) {
+    try {
+        $installedContent = Get-Content -Path $profilePath -Raw -ErrorAction Stop
+        if ([string]::IsNullOrWhiteSpace($installedContent)) {
+            throw "Installed profile file is empty"
+        }
+        Write-Log "Installation verified successfully." -Color "Green"
+    }
+    catch {
+        Write-Log "Failed to verify the installed profile. Error: $_" -Color "Red"
+        exit 1
+    }
+}
+else {
+    Write-Log "Failed to locate the installed profile at '$profilePath'." -Color "Red"
+    exit 1
+}
+
+# ---------------------------
+# Set Execution Policy for Current User if Needed
+# ---------------------------
+$currentPolicy = Get-ExecutionPolicy -Scope CurrentUser
+if ($currentPolicy -eq 'Restricted' -or $currentPolicy -eq 'AllSigned') {
+    try {
+        Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force
+        Write-Log "Updated execution policy to RemoteSigned for current user." -Color "Green"
+    }
+    catch {
+        Write-Log "Failed to update execution policy. You may need to run: Set-ExecutionPolicy RemoteSigned -Scope CurrentUser" -Color "Yellow"
+    }
+}
+
+# ---------------------------
 # Inform the User to Reload the Profile or Restart PowerShell
 # ---------------------------
 Write-Log "Installation completed successfully." -Color "Green"
 Write-Log "To apply the new profile, either restart PowerShell or run the following command:" -Color "Yellow"
-Write-Host "    . $PROFILE" -ForegroundColor "White"
+Write-Host "    . $PROFILE" -ForegroundColor Cyan
 
-# Optionally, reload the profile automatically
-# Uncomment the line below if you want the script to reload the profile automatically
-# . $PROFILE
+# ---------------------------
+# Additional Information
+# ---------------------------
+Write-Log "Installation Summary:" -Color "Cyan"
+Write-Host "  - Profile Location: $profilePath" -ForegroundColor White
+Write-Host "  - Backup Location: $backupDirectory" -ForegroundColor White
+Write-Host "  - Current PS Version: $($PSVersionTable.PSVersion)" -ForegroundColor White
+Write-Host "  - Execution Policy: $(Get-ExecutionPolicy -Scope CurrentUser)" -ForegroundColor White
+
+# ---------------------------
+# Optional: Offer to Reload Profile
+# ---------------------------
+$choice = Read-Host "Would you like to reload the profile now? (y/N)"
+if ($choice -eq 'y' -or $choice -eq 'Y') {
+    try {
+        . $PROFILE
+        Write-Log "Profile reloaded successfully." -Color "Green"
+    }
+    catch {
+        Write-Log "Failed to reload profile. Please restart PowerShell to apply changes." -Color "Yellow"
+    }
+}
 
 # ---------------------------
 # End of Script
