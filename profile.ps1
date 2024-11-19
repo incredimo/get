@@ -1,7 +1,7 @@
-# ██  ██████      ████  ██████    ██████  ██████    ██  ████████    ██████ 
+# ██  ██████      ████  ██████    ██████  ██████    ██  ████████    ██████
 # ██  ██    ██  ██      ██    ██  ██      ██    ██  ██  ██  ██  ██  ██    ██
 # ██  ██    ██  ██      ██████    ████    ██    ██  ██  ██  ██  ██  ██    ██
-# ██  ██    ██  ██████  ██    ██  ██████  ██████    ██  ██  ██  ██    ██████  
+# ██  ██    ██  ██████  ██    ██  ██████  ██████    ██  ██  ██  ██    ██████
 
 # Remove all generic PowerShell messages
 $PSDefaultParameterValues['*:NoLogo'] = $true
@@ -111,12 +111,12 @@ function Show-CustomBanner {
     }
 
     $coloredArt = ""
-    
+
     # Pre-generate color blocks
     $gradientBlocks = $GradientColors | ForEach-Object {
         Format-ColorBlock -r $_[0] -g $_[1] -b $_[2]
     }
-    
+
     $rainbowBlocks = $RainbowColors | ForEach-Object {
         Format-ColorBlock -r $_[0] -g $_[1] -b $_[2]
     }
@@ -127,7 +127,7 @@ function Show-CustomBanner {
         $pos = 0
         $blockCount = 0
         $totalBlocks = ($line | Select-String "██" -AllMatches).Matches.Count
-        
+
         while ($pos -lt $line.Length) {
             if ($pos + 1 -lt $line.Length -and $line.Substring($pos, 2) -eq "██") {
                 if ($blockCount -ge ($totalBlocks - $rainbowBlocks.Count)) {
@@ -159,12 +159,12 @@ function Show-CustomBanner {
     $coloredArt += "$env:COMPUTERNAME | $env:USERNAME | $(Get-Date -Format 'dd-MM-yyyy hh:mm tt')`n"
     $coloredArt += "$env:PROCESSOR_ARCHITECTURE | $osVersion | PS $powershellVersion`n"
     $coloredArt += "BUILD INCREDIBLE THINGS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
- 
+
     Write-Host $coloredArt
 }
 Show-CustomBanner
 
-    
+
 
 # Custom prompt
 $pwdLevels = 2
@@ -300,7 +300,7 @@ function env {
                     }
                 }
                 else {
-                    $newValue = $Value
+                     # handle this better.
                 }
                 Set-EnvVariable -Name $Name -Value $newValue -Permanent
             }
@@ -675,20 +675,20 @@ function Replace {
     param(
         [Parameter(Mandatory=$true, Position=0)]
         [string]$SearchText,
-        
+
         [Parameter(Mandatory=$true, Position=1)]
         [string]$ReplaceText,
-        
+
         [Parameter(Mandatory=$false, Position=2)]
         [string]$Path = (Get-Location).Path,
-        
+
         [Parameter(Mandatory=$false)]
         [string[]]$ExcludeExtensions = @()
     )
-    
+
     $divider = "─" * 50
     Write-Host (fmt $divider $colors['pink_bright'])
- 
+
     Write-Host (fmt "• search: " $colors['grey']) -NoNewline
     Write-Host (fmt $SearchText $colors['pink_bright'])
     Write-Host (fmt "• replace: " $colors['grey']) -NoNewline
@@ -700,14 +700,14 @@ function Replace {
         Write-Host (fmt ($ExcludeExtensions -join ", ") $colors['yellow'])
     }
     Write-Host (fmt $divider $colors['pink_bright'])
-    
+
     # Counter for tracking changes
     $stats = @{
         RenamedItems = 0
         UpdatedFiles = 0
         Errors = 0
     }
-    
+
     # Build file filter if exclusions specified
     $fileFilter = { $true }
     if ($ExcludeExtensions) {
@@ -716,7 +716,7 @@ function Replace {
             return -not ($ExcludeExtensions | Where-Object { $file.Name -like $_ })
         }
     }
-    
+
     # Rename files and folders
     Get-ChildItem -Path $Path -Recurse | Where-Object $fileFilter | ForEach-Object {
         $newName = $_.Name -replace [regex]::Escape($SearchText), $ReplaceText
@@ -740,13 +740,13 @@ function Replace {
             }
         }
     }
-    
+
     # Replace file contents
     Get-ChildItem -Path $Path -File -Recurse | Where-Object $fileFilter | ForEach-Object {
         try {
             $content = Get-Content -Path $_.FullName -Raw -ErrorAction Stop
             if ($null -eq $content) { return }
-            
+
             if ($content -match [regex]::Escape($SearchText)) {
                 $newContent = $content -replace [regex]::Escape($SearchText), $ReplaceText
                 [System.IO.File]::WriteAllText($_.FullName, $newContent)
@@ -762,7 +762,7 @@ function Replace {
             $stats.Errors++
         }
     }
-    
+
     # Display summary
     Write-Host (fmt $divider $colors['pink_bright'])
     Write-Host (fmt "operation summary:" $colors['cyan_bright'])
