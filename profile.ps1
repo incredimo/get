@@ -776,3 +776,538 @@ function Replace {
     }
     Write-Host (fmt $divider $colors['pink_bright'])
 }
+
+
+function Get-ContentLengths {
+    param (
+        [Parameter(Mandatory=$true)]
+        [System.IO.FileInfo[]]$Files,
+        [int]$TotalMaxLength,
+        [int]$MinimumPerFile = 100
+    )
+    
+    $fileSizes = @()
+    foreach ($file in $Files) {
+        try {
+            $content = Get-Content -Path $file.FullName -Raw -ErrorAction Stop
+            $fileSizes += @{
+                File = $file
+                OriginalLength = $content.Length
+                Content = $content
+                AllocatedLength = 0
+            }
+        }
+        catch {
+            continue
+        }
+    }
+
+    $fileSizes = $fileSizes | Sort-Object -Property OriginalLength -Descending
+    $totalLength = ($fileSizes | Measure-Object -Property OriginalLength -Sum).Sum
+
+    if ($totalLength -le $TotalMaxLength) {
+        foreach ($file in $fileSizes) {
+            $file.AllocatedLength = $file.OriginalLength
+        }
+        return $fileSizes
+    }
+
+    $reservedSpace = $fileSizes.Count * $MinimumPerFile
+    $remainingSpace = $TotalMaxLength - $reservedSpace
+
+    if ($remainingSpace -lt 0) {
+        $evenSpace = [Math]::Floor($TotalMaxLength / $fileSizes.Count)
+        foreach ($file in $fileSizes) {
+            $file.AllocatedLength = $evenSpace
+        }
+        return $fileSizes
+    }
+
+    foreach ($file in $fileSizes) {
+        $file.AllocatedLength = $MinimumPerFile
+        if ($totalLength -gt 0) {
+            $proportion = $file.OriginalLength / $totalLength
+            $additionalSpace = [Math]::Floor($remainingSpace * $proportion)
+            $file.AllocatedLength += $additionalSpace
+        }
+    }
+
+    return $fileSizes
+}
+
+function Get-FileContentSummary {
+    param (
+        [Parameter(Mandatory=$true)]
+        [System.IO.FileInfo]$File,
+        [Parameter(Mandatory=$true)]
+        [int]$MaxLength,
+        [string]$Content = $null
+    )
+
+    # Binary files to skip
+    $skipExtensions = @(
+        '.exe', '.dll', '.zip', '.pdf', 
+        '.doc', '.docx', '.xls', '.xlsx',
+        '.jpg', '.jpeg', '.png', '.gif', 
+        '.mp3', '.mp4', '.avi', '.mov'
+    )
+
+    try {
+        if ($skipExtensions -contains $File.Extension.ToLower()) {
+            return "Binary file - preview not available"
+        }
+
+        if (-not $Content) {
+            $Content = Get-Content -Path $File.FullName -Raw -ErrorAction Stop
+        }
+
+        if ([string]::IsNullOrEmpty($Content)) {
+            return "Empty file"
+        }
+        
+        if ($MaxLength -gt 0 -and $Content.Length -gt $MaxLength) {
+            $Content = $Content.Substring(0, $MaxLength) + "`n... (truncated)"
+        }
+
+        # Properly format the code block with backticks
+        $codeBlock = "``````" + "`n"
+        $codeBlock += $Content 
+        $codeBlock += "`n``````"
+        
+        return $codeBlock
+    }
+    catch {
+        return "Error reading file: $_"
+    }
+}
+
+function Test-ShouldIgnorePath {
+    param (
+        [Parameter(Mandatory=$true)]
+        [string]$Path,
+        [string[]]$IgnorePatterns
+    )
+    
+    $relativePath = $Path -replace [regex]::Escape((Get-Location)), ''
+    $relativePath = $relativePath.TrimStart('\', '/')
+    
+    foreach ($pattern in $IgnorePatterns) {
+        if ([string]::IsNullOrWhiteSpace($pattern) -or $pattern.StartsWith('#')) {
+            continue
+        }
+
+        $isNegation = $pattern.StartsWith('!')
+        if ($isNegation) {
+            $pattern = $pattern.Substring(1)
+        }
+
+        $regex = $pattern -replace '\*\*', '.*'
+        $regex = $regex -replace '\*', '[^/\\]*'
+        $regex = $regex -replace '\?', '.'
+        $regex = "^$regex$"
+
+        if ($relativePath -match $regex) {
+            return -not $isNegation
+        }
+    }
+
+    return $false
+}
+
+function sum {
+    param (
+        [Parameter(Position=0)]
+        [string]$Path = ".",
+        [Parameter(Mandatory=$false)]
+        [Alias("max")]
+        [int]$MaxLength = -1,
+        [switch]$IncludeHidden
+    )
+
+    if (-not (Test-Path $Path)) {
+        Write-Host "Error: Path '$Path' does not exist." -ForegroundColor Red
+        return
+    }
+
+    $ignorePatterns = @()
+    $gitignorePath = Join-Path (Get-Location) ".gitignore"
+    if (Test-Path $gitignorePath) {
+        $ignorePatterns = Get-Content $gitignorePath -ErrorAction SilentlyContinue
+    }
+
+    $ignorePatterns += @(
+        '.git/**',
+        'node_modules/**',
+        'bin/**',
+        'obj/**',
+        '.vs/**',
+        '*.suo',
+        '*.user',
+        '.DS_Store'
+    )
+
+    Write-Host "SUMMARY OF: $((Resolve-Path $Path).Path)"
+    Write-Host ("=" * 50)
+
+    $allFiles = Get-ChildItem -Path $Path -Recurse -File -ErrorAction Stop -Force:$IncludeHidden | 
+        Where-Object { -not (Test-ShouldIgnorePath -Path $_.FullName -IgnorePatterns $ignorePatterns) }
+
+    $stats = @{
+        TotalFiles = $allFiles.Count
+        ProcessedFiles = 0
+        SkippedFiles = 0
+        Errors = 0
+        TotalCharsShown = 0
+    }
+
+    $filesToProcess = $null
+    if ($MaxLength -gt 0) {
+        $filesToProcess = Get-ContentLengths -Files $allFiles -TotalMaxLength $MaxLength
+    } else {
+        $filesToProcess = $allFiles | ForEach-Object {
+            @{
+                File = $_
+                AllocatedLength = -1
+                Content = $null
+            }
+        }
+    }
+
+    foreach ($fileInfo in $filesToProcess) {
+        try {
+            $relativePath = $fileInfo.File.FullName -replace [regex]::Escape((Get-Location)), '.'
+            
+            Write-Host "`nfilename: $relativePath"
+            Write-Host ("-" * 30)
+            
+            $summary = Get-FileContentSummary -File $fileInfo.File -MaxLength $fileInfo.AllocatedLength -Content $fileInfo.Content
+            Write-Host $summary
+            
+            $stats.ProcessedFiles++
+            if ($fileInfo.AllocatedLength -gt 0) {
+                $stats.TotalCharsShown += $fileInfo.AllocatedLength
+            }
+        }
+        catch {
+            Write-Host "Error processing $($fileInfo.File.Name): $_" -ForegroundColor Red
+            $stats.Errors++
+        }
+    }
+
+    Write-Host "`n$("=" * 50)"
+    Write-Host "STATISTICS:"
+    Write-Host "• Total files found: $($stats.TotalFiles)"
+    Write-Host "• Files processed: $($stats.ProcessedFiles)"
+    if ($MaxLength -gt 0) {
+        Write-Host "• Total chars shown: $($stats.TotalCharsShown)"
+        Write-Host "• Max length limit: $MaxLength"
+    }
+    if ($stats.Errors -gt 0) {
+        Write-Host "• Errors encountered: $($stats.Errors)" -ForegroundColor Red
+    }
+    Write-Host ("=" * 50)
+}
+
+Set-Alias -Name summarize -Value sum
+
+function aifix {
+    param (
+        [Parameter(Position=0)]
+        [string]$Path = ".",
+        
+        [Parameter(Position=1, Mandatory=$true)]
+        [string]$Instruction,
+        
+        [Parameter()]
+        [switch]$WhatIf
+ 
+    )
+    
+    # Validate API key
+    $apiKey = $env:ANTHROPIC_API_KEY
+    if (-not $apiKey) {
+        Write-Host "Error: ANTHROPIC_API_KEY environment variable not set" -ForegroundColor Red
+        return
+    }
+
+    # Get absolute path
+    $Path = Resolve-Path $Path
+    if (-not $Path) {
+        Write-Host "Error: Invalid path specified" -ForegroundColor Red
+        return
+    }
+
+    # First, get the files using the existing logic from sum
+    $ignorePatterns = @()
+    $gitignorePath = Join-Path (Get-Location) ".gitignore"
+    if (Test-Path $gitignorePath) {
+        $ignorePatterns = Get-Content $gitignorePath -ErrorAction SilentlyContinue
+    }
+
+    $ignorePatterns += @(
+        '.git/**',
+        'node_modules/**',
+        'bin/**',
+        'obj/**',
+        '.vs/**',
+        '*.suo',
+        '*.user',
+        '.DS_Store'
+    )
+
+    # Get all files using the same logic as sum
+    $allFiles = Get-ChildItem -Path $Path -Recurse -File -ErrorAction Stop | 
+        Where-Object { -not (Test-ShouldIgnorePath -Path $_.FullName -IgnorePatterns $ignorePatterns) }
+
+    if (-not $allFiles -or $allFiles.Count -eq 0) {
+        Write-Host "No files found in path: $Path" -ForegroundColor Red
+        return
+    }
+
+    Write-Host "`n📂 Processing" -NoNewline -ForegroundColor Cyan
+    Write-Host " $($allFiles.Count) " -NoNewline -ForegroundColor Yellow
+    Write-Host "files...`n" -ForegroundColor Cyan
+
+    # Get file contents using ContentLengths
+    $filesToProcess = Get-ContentLengths -Files $allFiles -TotalMaxLength 100000
+    
+    # Build file contents dictionary
+    $fileContents = @{}
+    foreach ($fileInfo in $filesToProcess) {
+        try {
+            $relativePath = $fileInfo.File.FullName -replace [regex]::Escape((Get-Location)), '.'
+            $summary = Get-FileContentSummary -File $fileInfo.File -MaxLength $fileInfo.AllocatedLength -Content $fileInfo.Content
+            
+            # Strip the markdown code block markers
+            $content = $summary -replace '^```\r?\n?', '' -replace '\r?\n?```$', ''
+            
+            if ($content -ne "Binary file - preview not available" -and 
+                $content -ne "Empty file" -and 
+                -not $content.StartsWith("Error reading file:")) {
+                $fileContents[$relativePath] = $content
+            }
+        }
+        catch {
+            Write-Host "❌ Error processing $($fileInfo.File.Name): $_" -ForegroundColor Red
+            continue
+        }
+    }
+
+    if ($fileContents.Count -eq 0) {
+        Write-Host "❌ No valid files found to process" -ForegroundColor Red
+        return
+    }
+
+    Write-Host "📄 Found" -NoNewline -ForegroundColor Cyan
+    Write-Host " $($fileContents.Count) " -NoNewline -ForegroundColor Yellow
+    Write-Host "files to process" -ForegroundColor Cyan
+
+    Write-Host "`n📋 Files found:" -ForegroundColor Cyan
+    foreach ($file in $fileContents.Keys) {
+        Write-Host "   • $file" -ForegroundColor Gray
+    }
+
+    # Generate prompt for Claude
+    $prompt = @"
+As an expert developer, modify the code according to this instruction: $Instruction
+
+Current files:
+$('-' * 50)
+$(foreach ($file in $fileContents.Keys) {
+@"
+
+FILE: $file
+$('-' * 30)
+$($fileContents[$file])
+
+"@
+})
+
+Provide modifications in this exact format for each file that needs to be changed:
+
+---FILE_MODIFICATION_START---
+filepath: <relative/path/to/file>
+action: <modify or create>
+content:```
+<complete file content>
+```
+---FILE_MODIFICATION_END---
+
+Important:
+- Use exactly this format for each file modification
+- Provide the complete new content for each file, not just the changes
+- Use relative paths from the root directory
+- Only include files that need to be modified or created
+"@
+
+ 
+        Write-Host "`nGenerated prompt:"
+        Write-Host $prompt -ForegroundColor Cyan
+  
+
+    # Call Claude API
+    $headers = @{
+        'x-api-key' = $apiKey
+        'anthropic-version' = '2023-06-01'
+        'content-type' = 'application/json'
+    }
+
+    $body = @{
+        model = 'claude-3-5-sonnet-20241022'
+        max_tokens = 4096
+        messages = @(
+            @{
+                role = "user"
+                content = $prompt
+            }
+        )
+    } | ConvertTo-Json -Depth 10
+
+    try {
+        Write-Host "Sending request to Claude API..."
+        $response = Invoke-RestMethod `
+            -Uri "https://api.anthropic.com/v1/messages" `
+            -Method Post `
+            -Headers $headers `
+            -Body $body
+
+        $aiResponse = $response.content.text
+
+        if ($Debug) {
+            Write-Host "`nAPI Response:"
+            Write-Host $aiResponse
+        }
+
+        # Parse modifications from response
+        $modPattern = '(?ms)---FILE_MODIFICATION_START---.*?filepath:\s*(?<path>.*?)[\r\n]+action:\s*(?<action>.*?)[\r\n]+content:[\r\n]+```(?<content>.*?)```[\r\n]+---FILE_MODIFICATION_END---'
+        $modifications = [regex]::Matches($aiResponse, $modPattern)
+
+        if ($modifications.Count -eq 0) {
+            Write-Host "No file modifications found in AI response" -ForegroundColor Red
+            return
+        }
+
+        # Preview changes
+        Write-Host "`nProposed changes:"
+        foreach ($mod in $modifications) {
+            $filePath = $mod.Groups['path'].Value.Trim()
+            $action = $mod.Groups['action'].Value.Trim()
+            Write-Host "• $action`: $filePath"
+        }
+
+        if ($WhatIf) {
+            Write-Host "`nWhatIf: No changes made"
+            return
+        }
+
+        # Confirm changes
+        $confirm = Read-Host "`nApply these changes? (y/N)"
+        if ($confirm -ne 'y') {
+            Write-Host "Operation cancelled"
+            return
+        }
+
+        # Apply modifications
+        $succeeded = 0
+        $failed = 0
+
+        foreach ($mod in $modifications) {
+            $filePath = $mod.Groups['path'].Value.Trim()
+            $action = $mod.Groups['action'].Value.Trim()
+            $content = $mod.Groups['content'].Value
+
+            try {
+                $fullPath = Join-Path (Get-Location) $filePath
+                $fullPath = [System.IO.Path]::GetFullPath($fullPath)
+                
+                # Security check: ensure path is within current directory
+                $currentDir = [System.IO.Path]::GetFullPath((Get-Location))
+                if (-not $fullPath.StartsWith($currentDir)) {
+                    throw "Security violation: Path is outside current directory"
+                }
+
+                # Create directory if needed
+                $directory = [System.IO.Path]::GetDirectoryName($fullPath)
+                if (-not (Test-Path $directory)) {
+                    New-Item -ItemType Directory -Path $directory -Force | Out-Null
+                }
+
+                # Apply change
+                Set-Content -Path $fullPath -Value $content -NoNewline
+                Write-Host "✓ Modified $filePath" -ForegroundColor Green
+                $succeeded++
+            }
+            catch {
+                Write-Host "✗ Failed to modify $filePath`: $_" -ForegroundColor Red
+                $failed++
+            }
+        }
+
+        # Report results
+        Write-Host "`nResults:"
+        Write-Host "• Succeeded: $succeeded"
+        if ($failed -gt 0) {
+            Write-Host "• Failed: $failed" -ForegroundColor Red
+        }
+    }
+    catch {
+        Write-Host "Error: $_" -ForegroundColor Red
+        if ($Debug) {
+            Write-Host $_.ScriptStackTrace -ForegroundColor Red
+        }
+    }
+}
+
+Set-Alias -Name fix -Value aifix
+
+ 
+# gitrun [github url]
+# automatically clones the repo to C:\repo\<repo name> and runs it using cargo run
+function gitrun {
+    param (
+        [Parameter(Position=0)]
+        [string]$Url
+    )
+
+    try {
+        # Extract repo name from URL
+        $repoName = $Url -replace '.*github\.com/[^/]+/([^/]+)(\.git)?$','$1'
+        if ([string]::IsNullOrEmpty($repoName)) {
+            throw "Invalid GitHub URL format"
+        }
+
+        # Set target directory
+        $targetDir = "C:\repo\$repoName"
+
+        # Create parent directory if it doesn't exist
+        if (-not (Test-Path "C:\repo")) {
+            New-Item -ItemType Directory -Path "C:\repo" | Out-Null
+        }
+
+        # Clone the repository if it doesn't exist
+        if (-not (Test-Path $targetDir)) {
+            Write-Host "Cloning repository to $targetDir..." -ForegroundColor Cyan
+            git clone $Url $targetDir
+            if ($LASTEXITCODE -ne 0) {
+                throw "Git clone failed"
+            }
+        }
+
+        # Change to repo directory
+        Push-Location $targetDir
+
+        # Run with cargo
+        Write-Host "Building and running with cargo..." -ForegroundColor Cyan
+        cargo run
+
+        # Return to original directory
+        Pop-Location
+    }
+    catch {
+        Write-Host "Error: $_" -ForegroundColor Red
+        if ($Debug) {
+            Write-Host $_.ScriptStackTrace -ForegroundColor Red
+        }
+    }
+}
+
