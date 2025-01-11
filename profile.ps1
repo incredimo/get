@@ -924,33 +924,87 @@ function sum {
         [switch]$IncludeHidden
     )
 
+    # Directories to explicitly exclude from Get-ChildItem
+    $excludeDirs = @(
+        'node_modules',
+        '.git',
+        'bin',
+        'obj',
+        '.vs',
+        'dist',
+        'build',
+        'target',
+        'packages',
+        'vendor',
+        'coverage',
+        '.next',
+        '.nuget',
+        '.npm',
+        '.yarn',
+        'bower_components',
+        '__pycache__',
+        '.pytest_cache'
+    )
+
+    # File patterns to exclude
+    $excludeFiles = @(
+        '*.exe',
+        '*.dll',
+        '*.pdb',
+        '*.suo',
+        '*.user',
+        '*.cache',
+        '*.bun.lock*',
+        '*.log',
+        '*.bak',
+        '*.swp',
+        '.DS_Store',
+        'Thumbs.db',
+        '*.pyc',
+        '*.pyo',
+        '*.so',
+        '*.lock',
+        '*.lockb',
+        '*.lock.json',
+        '*.lock.yaml',
+        '*.lock.yml',
+        '*.lock.toml'
+    )
+
     if (-not (Test-Path $Path)) {
         Write-Host "Error: Path '$Path' does not exist." -ForegroundColor Red
         return
     }
 
-    $ignorePatterns = @()
-    $gitignorePath = Join-Path (Get-Location) ".gitignore"
-    if (Test-Path $gitignorePath) {
-        $ignorePatterns = Get-Content $gitignorePath -ErrorAction SilentlyContinue
-    }
-
-    $ignorePatterns += @(
-        '.git/**',
-        'node_modules/**',
-        'bin/**',
-        'obj/**',
-        '.vs/**',
-        '*.suo',
-        '*.user',
-        '.DS_Store'
-    )
-
-    Write-Host "SUMMARY OF: $((Resolve-Path $Path).Path)"
+    Write-Host "📂 SUMMARY OF: $((Resolve-Path $Path).Path)" -ForegroundColor Cyan
     Write-Host ("=" * 50)
 
-    $allFiles = Get-ChildItem -Path $Path -Recurse -File -ErrorAction Stop -Force:$IncludeHidden | 
-        Where-Object { -not (Test-ShouldIgnorePath -Path $_.FullName -IgnorePatterns $ignorePatterns) }
+    # Get all files, excluding the specified directories and files upfront
+    $allFiles = Get-ChildItem -Path $Path -Recurse -File -Force:$IncludeHidden -ErrorAction Stop |
+        Where-Object { 
+            $file = $_
+            $shouldInclude = $true
+            
+            # Check if file is in an excluded directory
+            foreach ($dir in $excludeDirs) {
+                if ($file.FullName -match "[\\/]$dir[\\/]") {
+                    $shouldInclude = $false
+                    break
+                }
+            }
+            
+            # Check if file matches excluded patterns
+            if ($shouldInclude) {
+                foreach ($pattern in $excludeFiles) {
+                    if ($file.Name -like $pattern) {
+                        $shouldInclude = $false
+                        break
+                    }
+                }
+            }
+            
+            $shouldInclude
+        } | Sort-Object LastWriteTime -Descending
 
     $stats = @{
         TotalFiles = $allFiles.Count
@@ -958,7 +1012,15 @@ function sum {
         SkippedFiles = 0
         Errors = 0
         TotalCharsShown = 0
+        TotalSizeMB = [math]::Round(($allFiles | Measure-Object -Property Length -Sum).Sum / 1MB, 2)
     }
+
+    if ($allFiles.Count -eq 0) {
+        Write-Host "No files found after applying exclusions." -ForegroundColor Yellow
+        return
+    }
+
+    Write-Host "📊 Found $($stats.TotalFiles) files (Total size: $($stats.TotalSizeMB) MB)" -ForegroundColor Cyan
 
     $filesToProcess = $null
     if ($MaxLength -gt 0) {
@@ -976,8 +1038,11 @@ function sum {
     foreach ($fileInfo in $filesToProcess) {
         try {
             $relativePath = $fileInfo.File.FullName -replace [regex]::Escape((Get-Location)), '.'
+            $lastModified = $fileInfo.File.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")
+            $sizeKB = [math]::Round($fileInfo.File.Length / 1KB, 2)
             
-            Write-Host "`nfilename: $relativePath"
+            Write-Host "`n📄 $relativePath" -ForegroundColor Yellow
+            Write-Host "   Modified: $lastModified | Size: ${sizeKB}KB" -ForegroundColor Gray
             Write-Host ("-" * 30)
             
             $summary = Get-FileContentSummary -File $fileInfo.File -MaxLength $fileInfo.AllocatedLength -Content $fileInfo.Content
@@ -989,18 +1054,19 @@ function sum {
             }
         }
         catch {
-            Write-Host "Error processing $($fileInfo.File.Name): $_" -ForegroundColor Red
+            Write-Host "❌ Error processing $($fileInfo.File.Name): $_" -ForegroundColor Red
             $stats.Errors++
         }
     }
 
     Write-Host "`n$("=" * 50)"
-    Write-Host "STATISTICS:"
-    Write-Host "• Total files found: $($stats.TotalFiles)"
-    Write-Host "• Files processed: $($stats.ProcessedFiles)"
+    Write-Host "📈 STATISTICS:" -ForegroundColor Cyan
+    Write-Host "• Total files found: $($stats.TotalFiles)" -ForegroundColor Gray
+    Write-Host "• Total size: $($stats.TotalSizeMB) MB" -ForegroundColor Gray
+    Write-Host "• Files processed: $($stats.ProcessedFiles)" -ForegroundColor Gray
     if ($MaxLength -gt 0) {
-        Write-Host "• Total chars shown: $($stats.TotalCharsShown)"
-        Write-Host "• Max length limit: $MaxLength"
+        Write-Host "• Total chars shown: $($stats.TotalCharsShown)" -ForegroundColor Gray
+        Write-Host "• Max length limit: $MaxLength" -ForegroundColor Gray
     }
     if ($stats.Errors -gt 0) {
         Write-Host "• Errors encountered: $($stats.Errors)" -ForegroundColor Red
@@ -1311,3 +1377,58 @@ function gitrun {
     }
 }
 
+
+# bump 
+# 1- checks if pwd is a git repo 
+# 2- checks if there is a bump.ps1 in the repo. if yes, it will just run it and exit
+# 3- if not, it will check if there are any uncommitted changes and create a commit with the message "bump" and the current date and push it to the remote repo
+function bump {
+    # Check if current directory is a git repo
+    if (-not (Test-Path .git)) {
+        Write-Host "Not in a git repo" -ForegroundColor Red
+        return
+    }
+
+    # Check for bump.ps1 and run it if exists
+    if (Test-Path "bump.ps1") {
+        Write-Host "Found bump.ps1, executing..." -ForegroundColor Cyan
+        & .\bump.ps1
+        return
+    }
+
+    # Check for uncommitted changes
+    $status = git status --porcelain
+    if ($status) {
+        # Get current date in ISO format
+        $date = Get-Date -Format "yyyy-MM-dd"
+        $message = "bump: $date"
+
+        Write-Host "Creating commit with message: $message" -ForegroundColor Cyan
+        
+        # Stage all changes
+        git add .
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "Failed to stage changes" -ForegroundColor Red
+            return
+        }
+
+        # Create commit
+        git commit -m $message
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "Failed to create commit" -ForegroundColor Red
+            return
+        }
+
+        # Push changes
+        Write-Host "Pushing changes..." -ForegroundColor Cyan
+        git push
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "Failed to push changes" -ForegroundColor Red
+            return
+        }
+
+        Write-Host "Successfully bumped repository" -ForegroundColor Green
+    } else {
+        Write-Host "No changes to commit" -ForegroundColor Yellow
+    }
+}
