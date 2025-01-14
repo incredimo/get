@@ -26,205 +26,19 @@ use rayon::prelude::*;
 use ctrlc;
 use rmp_serde::{encode, decode};
 
+use get::config::Config;
+use get::error::GetError;
+use get::logging::{Logger, LogLevel};
+use get::repository::{ensure_repo, WINGET_PKG_REPO_URL, SCOOP_MAIN_REPO_URL};
+use get::package_manager::{PackageManager, WingetManager, ScoopManager};
+use get::utils::{download_file, verify_checksum};
+
 // Atomic flag for graceful termination
 static SHOULD_TERMINATE: AtomicBool = AtomicBool::new(false);
 
-// -------------------- Configuration --------------------
 
-#[derive(Debug, Deserialize, Serialize)]
-struct Config {
-    default_package_manager: Option<String>,
-    default_download_dir: Option<String>,
-    log_verbosity: Option<String>,
-    github_token: Option<String>, // Added for GitHub API authentication
-}
-
-impl Config {
-    fn load() -> Self {
-        let mut config = Config {
-            default_package_manager: None,
-            default_download_dir: None,
-            log_verbosity: None,
-            github_token: None,
-        };
-
-        // Determine config file path
-        if let Some(home) = home_dir() {
-            let config_path = home.join(".get_config.toml");
-            if config_path.exists() {
-                let content = fs::read_to_string(&config_path).unwrap_or_default();
-                let parsed: Result<Config, toml::de::Error> = toml::from_str(&content);
-                if let Ok(cfg) = parsed {
-                    config = cfg;
-                } else {
-                    eprintln!("Failed to parse config file. Using defaults.");
-                }
-            }
-        }
-
-        // Override with environment variables if present
-        if let Ok(manager) = env::var("GET_PREFERRED_MANAGER") {
-            config.default_package_manager = Some(manager);
-        }
-
-        if let Ok(download_path) = env::var("GET_DOWNLOAD_PATH") {
-            config.default_download_dir = Some(download_path);
-        }
-
-        if let Ok(log_level) = env::var("GET_LOG_VERBOSITY") {
-            config.log_verbosity = Some(log_level);
-        }
-
-        if let Ok(token) = env::var("GET_GITHUB_TOKEN") {
-            config.github_token = Some(token);
-        }
-
-        config
-    }
-
-    fn get_preferred_manager(&self) -> Option<&str> {
-        if let Some(ref manager) = self.default_package_manager {
-            Some(manager.as_str())
-        } else {
-            None
-        }
-    }
-
-    fn get_download_dir(&self) -> PathBuf {
-        if let Some(ref dir) = self.default_download_dir {
-            PathBuf::from(dir)
-        } else {
-            if let Some(home) = home_dir() {
-                home.join("Downloads")
-            } else {
-                PathBuf::from(".")
-            }
-        }
-    }
-
-    fn get_log_level(&self) -> LogLevel {
-        if let Some(ref level) = self.log_verbosity {
-            match level.to_lowercase().as_str() {
-                "verbose" => LogLevel::Verbose,
-                _ => LogLevel::Minimal,
-            }
-        } else {
-            LogLevel::Minimal
-        }
-    }
-
-    fn get_repos_dir(&self) -> PathBuf {
-        if let Some(home) = home_dir() {
-            home.join(".get_repos")
-        } else {
-            PathBuf::from(".")
-        }
-    }
-
-    fn save(&self) -> Result<(), GetError> {
-        if let Some(home) = home_dir() {
-            let config_path = home.join(".get_config.toml");
-            let toml_str = toml::to_string(&self).map_err(|e| GetError::ConfigError(e.to_string()))?;
-            fs::write(&config_path, toml_str)?;
-            Ok(())
-        } else {
-            Err(GetError::ConfigError(
-                "Unable to determine home directory.".to_string(),
-            ))
-        }
-    }
-}
-
-// -------------------- Logging --------------------
-
-#[derive(Debug, PartialEq)]
-enum LogLevel {
-    Minimal,
-    Verbose,
-}
-
-struct Logger {
-    level: LogLevel,
-}
-
-impl Logger {
-    fn new(level: LogLevel) -> Self {
-        Logger { level }
-    }
-
-    // cyan
-    fn log(&self, message: &str) {
-        println!("\x1b[36m{}\x1b[0m", message); // Cyan
-    }
-
-    // print in cyan
-    fn info(&self, message: &str) {
-        println!("\x1b[36m{}\x1b[0m", message); // Cyan
-    }
-
-    fn error(&self, message: &str) {
-        eprintln!("\x1b[31mError: {}\x1b[0m", message); // Red
-    }
-
-    fn warn(&self, message: &str) {
-        eprintln!("\x1b[33mWarning: {}\x1b[0m", message); // Yellow
-    }
-}
-
-// -------------------- Error Handling --------------------
-
-#[derive(Debug)]
-enum GetError {
-    MissingDependency(String),
-    NetworkError(String),
-    CommandError(String),
-    InvalidInput(String),
-    IoError(String),
-    ConfigError(String),
-    ParseError(String),
-}
-
-impl From<io::Error> for GetError {
-    fn from(err: io::Error) -> Self {
-        GetError::IoError(err.to_string())
-    }
-}
-
-impl From<reqwest::Error> for GetError {
-    fn from(err: reqwest::Error) -> Self {
-        GetError::NetworkError(err.to_string())
-    }
-}
-
-impl From<toml::de::Error> for GetError {
-    fn from(err: toml::de::Error) -> Self {
-        GetError::ConfigError(err.to_string())
-    }
-}
-
-impl From<serde_yaml::Error> for GetError {
-    fn from(err: serde_yaml::Error) -> Self {
-        GetError::ParseError(err.to_string())
-    }
-}
-
-impl From<serde_json::Error> for GetError {
-    fn from(err: serde_json::Error) -> Self {
-        GetError::ParseError(err.to_string())
-    }
-}
-
-impl From<rmp_serde::decode::Error> for GetError {
-    fn from(err: rmp_serde::decode::Error) -> Self {
-        GetError::ParseError(err.to_string())
-    }
-}
-
-impl From<rmp_serde::encode::Error> for GetError {
-    fn from(err: rmp_serde::encode::Error) -> Self {
-        GetError::IoError(err.to_string())
-    }
-}
+ 
+ 
 
 // -------------------- Command Parsing --------------------
 
@@ -425,102 +239,37 @@ struct ScoopAutoupdate {
     url: String,
 }
 
-// -------------------- Repository Management --------------------
+// Module declarations
+mod chocolatey;
+mod scoop;
 
-const WINGET_PKG_REPO_URL: &str = "https://github.com/microsoft/winget-pkgs.git";
-const SCOOP_MAIN_REPO_URL: &str = "https://github.com/ScoopInstaller/Main.git";
-const REPO_PULL_INTERVAL_HOURS: u64 = 24; // Repull if last pull was more than 24 hours ago
+// Import package manager modules
+use chocolatey::{ensure_choco_repo, install_choco_package};
+use scoop::{ensure_scoop_repo, install_scoop_package};
 
-fn ensure_repo(repo_url: &str, local_path: &Path, logger: &Logger, m: &MultiProgress) -> Result<(), GetError> {
+// -------------------- Install Manager --------------------
+
+fn install_package(
+    package: &str,
+    config: &Config,
+    logger: &Logger,
+    m: &MultiProgress,
+) -> Result<(), GetError> {
     if SHOULD_TERMINATE.load(Ordering::SeqCst) {
         return Err(GetError::InvalidInput("Operation terminated by user.".to_string()));
     }
 
-    if local_path.exists() {
-        logger.log(&format!(
-            "Repository at '{}' already exists. Checking if it needs to be updated...",
-            local_path.display()
-        ));
-
-        // Check last pull time
-        let last_pull_path = local_path.join("last_pull.txt");
-        let needs_pull = if last_pull_path.exists() {
-            let content = fs::read_to_string(&last_pull_path)?;
-            if let Ok(timestamp) = content.trim().parse::<u64>() {
-                let last_pull_time = UNIX_EPOCH + Duration::from_secs(timestamp);
-                if let Ok(system_time) = SystemTime::now().duration_since(last_pull_time) {
-                    system_time.as_secs() > REPO_PULL_INTERVAL_HOURS * 3600
-                } else {
-                    true
-                }
+    // Check which package manager to use based on config
+    match config.get_preferred_manager() {
+        Some("choco") => install_choco_package(package, config, logger, m),
+        Some("scoop") => install_scoop_package(package, config, logger, m),
+        _ => {
+            // Try both if no preference is set
+            if let Err(e) = install_choco_package(package, config, logger, m) {
+                install_scoop_package(package, config, logger, m)
             } else {
-                true
-            }
-        } else {
-            true
-        };
-
-        if needs_pull {
-            let pb = m.add(ProgressBar::new_spinner());
-            pb.set_message(format!("Pulling latest changes for repository '{}'.", local_path.display()));
-            pb.enable_steady_tick(Duration::from_millis(100));
-            let status = Command::new("git")
-                .args(&["-C", local_path.to_str().unwrap(), "pull"])
-                .status()?;
-
-            pb.finish_and_clear();
-
-            if status.success() {
-                logger.log(&format!(
-                    "Successfully updated repository at '{}'.",
-                    local_path.display()
-                ));
-                // Update last_pull.txt
-                let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-                fs::write(&last_pull_path, now.to_string())?;
                 Ok(())
-            } else {
-                Err(GetError::CommandError(format!(
-                    "Failed to pull updates for repository '{}'.",
-                    local_path.display()
-                )))
             }
-        } else {
-            logger.log(&format!(
-                "Repository '{}' is up-to-date. No need to pull.",
-                local_path.display()
-            ));
-            Ok(())
-        }
-    } else {
-        let pb = m.add(ProgressBar::new_spinner());
-        pb.set_message(format!(
-            "Cloning repository from '{}' to '{}'.",
-            repo_url,
-            local_path.display()
-        ));
-        pb.enable_steady_tick(Duration::from_millis(100));
-        let status = Command::new("git")
-            .args(&["clone", repo_url, local_path.to_str().unwrap()])
-            .status()?;
-
-        pb.finish_and_clear();
-
-        if status.success() {
-            logger.log(&format!(
-                "Successfully cloned repository to '{}'.",
-                local_path.display()
-            ));
-            // Create last_pull.txt
-            let last_pull_path = local_path.join("last_pull.txt");
-            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-            fs::write(&last_pull_path, now.to_string())?;
-            Ok(())
-        } else {
-            Err(GetError::CommandError(format!(
-                "Failed to clone repository from '{}'.",
-                repo_url
-            )))
         }
     }
 }
@@ -819,76 +568,7 @@ fn search_package(
     Ok(())
 }
 
-// -------------------- Install Manager --------------------
 
-fn install_package(
-    package: &str,
-    config: &Config,
-    logger: &Logger,
-    m: &MultiProgress,
-) -> Result<(), GetError> {
-    if SHOULD_TERMINATE.load(Ordering::SeqCst) {
-        return Err(GetError::InvalidInput("Operation terminated by user.".to_string()));
-    }
-
-    // Load or create indexes
-    logger.log(&format!("Searching for package '{}' in Winget and Scoop repositories...", package));
-    let (winget_index, scoop_index) = load_or_create_indexes(config, logger, m)?;
-
-    // Search in Winget
-    logger.log("Searching in Winget index...");
-    let winget_results: Vec<&WingetIndexEntry> = winget_index
-        .par_iter()
-        .filter(|entry| {
-            entry.PackageIdentifier.to_lowercase().contains(&package.to_lowercase())
-        })
-        .collect();
-
-    // Search in Scoop
-    logger.log("Searching in Scoop index...");
-    let scoop_results: Vec<&ScoopIndexEntry> = scoop_index
-        .par_iter()
-        .filter(|entry| {
-            entry.description.to_lowercase().contains(&package.to_lowercase())
-        })
-        .collect();
-
-    if winget_results.is_empty() && scoop_results.is_empty() {
-        return Err(GetError::InvalidInput(format!(
-            "Package '{}' not found in Winget or Scoop repositories.",
-            package
-        )));
-    }
-
-    // Prioritize Winget results
-    if !winget_results.is_empty() {
-        logger.log("Attempting to install using Winget manifests.");
-        for manifest in winget_results {
-            if manifest.PackageIdentifier.to_lowercase().contains(&package.to_lowercase()) {
-                logger.log(&format!("Found package '{}' in Winget.", manifest.PackageIdentifier));
-                return handle_winget_install(manifest, config, logger, m);
-            }
-        }
-    }
-
-    // If not found in Winget, try Scoop
-    if !scoop_results.is_empty() {
-        logger.log("Attempting to install using Scoop manifests.");
-        for manifest in scoop_results {
-            // Assuming the package name matches
-            // In a real scenario, additional checks can be performed
-            if manifest.description.to_lowercase().contains(&package.to_lowercase()) {
-                logger.log(&format!("Found package '{}' in Scoop.", manifest.description));
-                return handle_scoop_install(manifest, config, logger, m);
-            }
-        }
-    }
-
-    Err(GetError::InvalidInput(format!(
-        "Package '{}' not found or installation criteria not met.",
-        package
-    )))
-}
 
 fn handle_winget_install(
     manifest: &WingetIndexEntry,
@@ -1263,40 +943,6 @@ fn download_installer(url: &str, download_dir: &Path, logger: &Logger, m: &Multi
     Ok(file_path)
 }
 
-fn verify_checksum(file_path: &Path, expected_hash: &str, logger: &Logger) -> Result<(), GetError> {
-    if SHOULD_TERMINATE.load(Ordering::SeqCst) {
-        return Err(GetError::InvalidInput("Operation terminated by user.".to_string()));
-    }
-
-    let mut file = File::open(file_path)?;
-    let mut hasher = Sha256::new();
-    let mut buffer = [0u8; 1024 * 1024]; // 1MB buffer
-
-    loop {
-        if SHOULD_TERMINATE.load(Ordering::SeqCst) {
-            return Err(GetError::InvalidInput("Operation terminated by user.".to_string()));
-        }
-
-        let n = file.read(&mut buffer)?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buffer[..n]);
-    }
-
-    let result = hasher.finalize();
-    let calculated_hash = hex_encode(result);
-
-    if calculated_hash.eq_ignore_ascii_case(&expected_hash) {
-        logger.log("Checksum verification passed.");
-        Ok(())
-    } else {
-        Err(GetError::NetworkError(format!(
-            "Checksum mismatch: expected {}, got {}",
-            expected_hash, calculated_hash
-        )))
-    }
-}
 
 // -------------------- Installer Execution --------------------
 
@@ -1430,74 +1076,6 @@ fn clone_repository(repo_url: &str, logger: &Logger, m: &MultiProgress) -> Resul
     }
 }
 
-// -------------------- Download Manager --------------------
-
-fn download_file(url: &str, download_dir: &Path, logger: &Logger, m: &MultiProgress) -> Result<(), GetError> {
-    if SHOULD_TERMINATE.load(Ordering::SeqCst) {
-        return Err(GetError::InvalidInput("Operation terminated by user.".to_string()));
-    }
-
-    logger.log(&format!("Starting download from '{}'.", url));
-
-    let client = Client::builder()
-        .timeout(Duration::from_secs(300)) // Increased timeout for large files
-        .build()?;
-
-    let response = client
-        .get(url)
-        .header(USER_AGENT, "get-terminal-app/1.0")
-        .send()?;
-
-    if !response.status().is_success() {
-        return Err(GetError::NetworkError(format!(
-            "Failed to download file: HTTP {}",
-            response.status()
-        )));
-    }
-
-    let url_path = url
-        .split('/')
-        .last()
-        .ok_or_else(|| GetError::InvalidInput("Invalid URL.".to_string()))?;
-    let file_path = download_dir.join(url_path);
-
-    fs::create_dir_all(download_dir)?;
-
-    let mut file = File::create(&file_path)?;
-
-    let total_size = response
-        .content_length()
-        .ok_or_else(|| GetError::NetworkError("Failed to get content length.".to_string()))?;
-
-    let pb = m.add(ProgressBar::new(total_size));
-    pb.set_style(ProgressStyle::default_bar()
-        .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")
-        .unwrap()
-        .progress_chars("#>-"));
-
-    let mut downloaded: u64 = 0;
-
-    let mut reader = response;
-
-    let mut buffer = [0u8; 8192];
-    loop {
-        if SHOULD_TERMINATE.load(Ordering::SeqCst) {
-            pb.finish_and_clear();
-            return Err(GetError::InvalidInput("Operation terminated by user.".to_string()));
-        }
-
-        let bytes_read = reader.read(&mut buffer)?;
-        if bytes_read == 0 {
-            break;
-        }
-        file.write_all(&buffer[..bytes_read])?;
-        downloaded += bytes_read as u64;
-        pb.set_position(downloaded);
-    }
-
-    pb.finish_with_message("Download completed successfully.");
-    Ok(())
-}
 
 // -------------------- Main Execution ---------------------
 
