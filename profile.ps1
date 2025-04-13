@@ -3,6 +3,9 @@
 # ██  ██    ██  ██      ██████    ████    ██    ██  ██  ██  ██  ██  ██    ██
 # ██  ██    ██  ██████  ██    ██  ██████  ██████    ██  ██  ██  ██    ██████
 
+#  █ █▀▀▄ ▄▀▀ █▀█ █▀▀ █▀▀▄ █ █▀█▀▄ █▀▀▄
+#  █ █  █ █▄▄ █▀▄ ██▄ █▄▄▀ █ █ █ █ ▀▄▄█
+
 # Remove all generic PowerShell messages
 $PSDefaultParameterValues['*:NoLogo'] = $true
 $PSDefaultParameterValues['*:NoProfile'] = $true
@@ -66,105 +69,127 @@ function fmt {
     return "`e[38;2;$foreground;48;2;${background}m${text}`e[0m"
 }
 
+# $banner = @(
+#     "██ ██████     ████ ██████   ██████ ██████   ██ ████████   ██████ ",
+#     "██ ██    ██ ██     ██    ██ ██     ██    ██ ██ ██  ██  ██ ██    ██",
+#     "██ ██    ██ ██     ██████   ████   ██    ██ ██ ██  ██  ██ ██    ██",
+#     "██ ██    ██ ██████ ██    ██ ██████ ██████   ██ ██  ██  ██   ██████"
+#     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+# )
+
+
+#  █ █▀▀▄ ▄▀▀ █▀█ █▀▀ █▀▀▄ █ █▀█▀▄ █▀▀▄
+#  █ █  █ █▄▄ █▀▄ ██▄ █▄▄▀ █ █ █ █ ▀▄▄█
+# Banner art: you can mix block characters (e.g., █, ▄, or ▀)
 $banner = @(
-    "██ ██████     ████ ██████   ██████ ██████   ██ ████████   ██████ ",
-    "██ ██    ██ ██     ██    ██ ██     ██    ██ ██ ██  ██  ██ ██    ██",
-    "██ ██    ██ ██     ██████   ████   ██    ██ ██ ██  ██  ██ ██    ██",
-    "██ ██    ██ ██████ ██    ██ ██████ ██████   ██ ██  ██  ██   ██████"
-    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    "█ █▀▀▄ ▄▀▀ █▀█ █▀▀ █▀▀▄ █ █▀█▀▄ █▀▀▄  AGHIL KUTTIKATIL MOHANDAS",
+    "█ █  █ █▄▄ █▀▄ ██▄ █▄▄▀ █ █ █ █ ▀▄▄█  a@xo.rs | incredimo.com "
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 )
 
+# Define the block characters we want to process.
+$blockChars = @("█", "▄", "▀")
 
+# Define your rainbow color palette (RGB values) exactly as before.
+$RainbowColors = @(
+    @(63,81,181),    # 3F51B5
+    @(33,150,243),   # 2196F3
+    @(3,169,244),    # 03A9F4
+    @(0,150,136),    # 009688
+    @(76,175,80),    # 4CAF50
+    @(205,220,57),   # CDDC39
+    @(255,193,7),    # FFC107
+    @(255,152,0),    # FF9800
+    @(255,87,34),    # FF5722
+    @(244,67,54)     # F44336
+)
+
+# Define white as the base color (RGB for white).
+$WhiteRGB = @(255,255,255)
+
+# Helper function: wraps a character with ANSI escape codes for the given RGB color.
+function Format-Block {
+    param(
+        [Parameter(Mandatory=$true)] [string]$char,
+        [Parameter(Mandatory=$true)] [int]$r,
+        [Parameter(Mandatory=$true)] [int]$g,
+        [Parameter(Mandatory=$true)] [int]$b
+    )
+    return "$([char]27)[38;2;${r};${g};${b}m$char$([char]27)[0m"
+}
+
+# Main function that builds the banner:
+# - Accepts an angle (in degrees) for the gradient.
+# - Accepts a white threshold which is the fraction of the gradient (0 to 1) that stays white.
 function Show-CustomBanner {
     param(
-        [array]$GradientColors = @(
-            @(230, 230, 230), # Dimmest white
-            @(230, 230, 230),
-            @(230, 230, 230),
-            @(230, 230, 230),
-            @(230, 230, 230),
-            @(230, 230, 230)  # Brightest white
-        ),
-        # FFBE0B
-        # FB5607
-        # FF006E
-        # 8338EC
-        # 3A86FF
-        [array]$RainbowColors = @(
-            @(63, 81, 181),     # 3F51B5
-            @(33, 150, 243),   # 2196F3
-            @(3, 169, 244),    # 03A9F4
-            @(0, 150, 136),    # 009688
-            @(76, 175, 80),    # 4CAF50
-            @(205, 220, 57),   # CDDC39
-            @(255, 193, 7),    # FFC107
-            @(255, 152, 0),    # FF9800
-            @(255, 87, 34),    # FF5722
-            @(244, 67, 54)     # F44336
-        )
+        [double]$Angle = 45.0,         # Angle in degrees (default is 45°)
+        [double]$WhiteThreshold = 0.3    # Fraction of the projection range that remains white.
     )
 
-    # Helper function to format colored blocks
-    function Format-ColorBlock {
-        param([int]$r, [int]$g, [int]$b)
-        return "$([char]27)[38;2;${r};${g};${b}m██$([char]27)[0m"
-    }
+    # Convert the angle from degrees to radians.
+    $theta = $Angle * [Math]::PI / 180.0
 
-    $coloredArt = ""
-
-    # Pre-generate color blocks
-    $gradientBlocks = $GradientColors | ForEach-Object {
-        Format-ColorBlock -r $_[0] -g $_[1] -b $_[2]
-    }
-
-    $rainbowBlocks = $RainbowColors | ForEach-Object {
-        Format-ColorBlock -r $_[0] -g $_[1] -b $_[2]
-    }
-
-
-
-    foreach ($line in $banner) {
-        $pos = 0
-        $blockCount = 0
-        $totalBlocks = ($line | Select-String "██" -AllMatches).Matches.Count
-
-        while ($pos -lt $line.Length) {
-            if ($pos + 1 -lt $line.Length -and $line.Substring($pos, 2) -eq "██") {
-                if ($blockCount -ge ($totalBlocks - $rainbowBlocks.Count)) {
-                    # Last blocks get rainbow colors
-                    $colorIndex = $blockCount - ($totalBlocks - $rainbowBlocks.Count)
-                    $coloredArt += $rainbowBlocks[$colorIndex]
-                }
-                elseif ($blockCount -lt $gradientBlocks.Count) {
-                    # First blocks get gradient colors
-                    $coloredArt += $gradientBlocks[$blockCount]
-                }
-                else {
-                    # Middle blocks get brightest gradient color
-                    $coloredArt += $gradientBlocks[-1]
-                }
-                $blockCount++
-                $pos += 2
-            }
-            else {
-                $coloredArt += $line[$pos]
-                $pos++
+    # First pass: determine the maximum projection value among all block characters.
+    # Projection for each block = (column * cos(theta) + row * sin(theta))
+    $maxProj = 0.0
+    for ($row = 0; $row -lt $banner.Count; $row++) {
+        $line = $banner[$row]
+        for ($col = 0; $col -lt $line.Length; $col++) {
+            $char = $line[$col]
+            if ($blockChars -contains $char) {
+                $proj = $col * [Math]::Cos($theta) + $row * [Math]::Sin($theta)
+                if ($proj -gt $maxProj) { $maxProj = $proj }
             }
         }
-        $coloredArt += "`n"
     }
 
-    $osVersion = $env:OS
-    $powershellVersion = $PSVersionTable.PSVersion
-    $coloredArt += "$env:COMPUTERNAME | $env:USERNAME | $(Get-Date -Format 'dd-MM-yyyy hh:mm tt')`n"
-    $coloredArt += "$env:PROCESSOR_ARCHITECTURE | $osVersion | PS $powershellVersion`n"
-    $coloredArt += "BUILD INCREDIBLE THINGS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    # Build the colored banner output.
+    $coloredArt = ""
+    for ($row = 0; $row -lt $banner.Count; $row++) {
+        $line = $banner[$row]
+        $lineOutput = ""
+        for ($col = 0; $col -lt $line.Length; $col++) {
+            $char = $line[$col]
+            if ($blockChars -contains $char) {
+                # Compute the projection of this block.
+                $proj = $col * [Math]::Cos($theta) + $row * [Math]::Sin($theta)
+                # Compute the relative position (ratio) along the gradient [0, 1]
+                $ratio = if ($maxProj -eq 0) { 0 } else { $proj / $maxProj }
+                
+                if ($ratio -lt $WhiteThreshold) {
+                    # If the ratio is below the white threshold, render the block in white.
+                    $lineOutput += Format-Block -char $char -r $WhiteRGB[0] -g $WhiteRGB[1] -b $WhiteRGB[2]
+                }
+                else {
+                    # Otherwise, scale the ratio into the rainbow range.
+                    $relativeRainbow = ($ratio - $WhiteThreshold) / (1 - $WhiteThreshold)
+                    $index = [Math]::Round($relativeRainbow * ($RainbowColors.Count - 1))
+                    if ($index -ge $RainbowColors.Count) { $index = $RainbowColors.Count - 1 }
+                    $color = $RainbowColors[$index]
+                    $lineOutput += Format-Block -char $char -r $color[0] -g $color[1] -b $color[2]
+                }
+            }
+            else {
+                # Characters that aren't in $blockChars are output unchanged.
+                $lineOutput += $char
+            }
+        }
+        $coloredArt += $lineOutput + "`n"
+    }
+
+ 
 
     Write-Host $coloredArt
 }
-Show-CustomBanner
 
+# --- Usage Examples ---
 
+# Full range gradient at a 45° angle with 30% white at the beginning.
+Show-CustomBanner -Angle 45 -WhiteThreshold 0.45
+
+# For example, try a different angle (like 60°) and adjust the white threshold as needed:
+# Show-CustomBanner -Angle 60 -WhiteThreshold 0.2
 
 # Custom prompt
 $pwdLevels = 2
@@ -349,15 +374,7 @@ function wget {
     Invoke-WebRequest -Uri $Url -OutFile $Output
 }
 
-# Alias for curl
-function curl {
-    param (
-        [Parameter(Mandatory=$true)]
-        [string]$Url
-    )
-
-    Invoke-WebRequest -Uri $Url
-}
+ 
 
 # Alias for open
 function open {
@@ -835,600 +852,372 @@ function Get-ContentLengths {
     return $fileSizes
 }
 
-function Get-FileContentSummary {
-    param (
-        [Parameter(Mandatory=$true)]
-        [System.IO.FileInfo]$File,
-        [Parameter(Mandatory=$true)]
-        [int]$MaxLength,
-        [string]$Content = $null
-    )
 
-    # Binary files to skip
-    $skipExtensions = @(
-        '.exe', '.dll', '.zip', '.pdf', 
-        '.doc', '.docx', '.xls', '.xlsx',
-        '.jpg', '.jpeg', '.png', '.gif', 
-        '.mp3', '.mp4', '.avi', '.mov'
-    )
 
-    try {
-        if ($skipExtensions -contains $File.Extension.ToLower()) {
-            return "Binary file - preview not available"
-        }
-
-        if (-not $Content) {
-            $Content = Get-Content -Path $File.FullName -Raw -ErrorAction Stop
-        }
-
-        if ([string]::IsNullOrEmpty($Content)) {
-            return "Empty file"
-        }
-        
-        if ($MaxLength -gt 0 -and $Content.Length -gt $MaxLength) {
-            $Content = $Content.Substring(0, $MaxLength) + "`n... (truncated)"
-        }
-
-        # Properly format the code block with backticks
-        $codeBlock = "``````" + "`n"
-        $codeBlock += $Content 
-        $codeBlock += "`n``````"
-        
-        return $codeBlock
-    }
-    catch {
-        return "Error reading file: $_"
-    }
-}
-
-function Test-ShouldIgnorePath {
-    param (
-        [Parameter(Mandatory=$true)]
-        [string]$Path,
-        [string[]]$IgnorePatterns
-    )
-    
-    $relativePath = $Path -replace [regex]::Escape((Get-Location)), ''
-    $relativePath = $relativePath.TrimStart('\', '/')
-    
-    foreach ($pattern in $IgnorePatterns) {
-        if ([string]::IsNullOrWhiteSpace($pattern) -or $pattern.StartsWith('#')) {
-            continue
-        }
-
-        $isNegation = $pattern.StartsWith('!')
-        if ($isNegation) {
-            $pattern = $pattern.Substring(1)
-        }
-
-        $regex = $pattern -replace '\*\*', '.*'
-        $regex = $regex -replace '\*', '[^/\\]*'
-        $regex = $regex -replace '\?', '.'
-        $regex = "^$regex$"
-
-        if ($relativePath -match $regex) {
-            return -not $isNegation
-        }
-    }
-
-    return $false
-}
 
 function sum {
     param (
         [Parameter(Position=0)]
         [string]$Path = ".",
+        
         [Parameter(Mandatory=$false)]
-        [Alias("max")]
-        [int]$MaxLength = -1,
-        [switch]$IncludeHidden
+        [Alias("m")]
+        [int]$MaxLength = 100000,
+        
+        [Parameter(Mandatory=$false)]
+        [Alias("a")]
+        [switch]$All,
+        
+        [Parameter(Mandatory=$false)]
+        [Alias("nc")]
+        [switch]$NoClipboard,
+        
+        [Parameter(Mandatory=$false)]
+        [Alias("h")]
+        [switch]$Hidden,
+        
+        [Parameter(Mandatory=$false)]
+        [switch]$Help,
+        
+        [Parameter(Mandatory=$false)]
+        [Alias("f")]
+        [string[]]$FileFilter,
+        
+        [Parameter(Mandatory=$false)]
+        [Alias("i")]
+        [string[]]$IgnoreDirs,
+        
+        [Parameter(Mandatory=$false)]
+        [Alias("s")]
+        [switch]$Structure
     )
 
-    # Directories to explicitly exclude from Get-ChildItem
-    $excludeDirs = @(
-        'node_modules',
-        '.git',
-        'bin',
-        'obj',
-        '.vs',
-        'dist',
-        'build',
-        'target',
-        'packages',
-        'vendor',
-        'coverage',
-        '.next',
-        '.nuget',
-        '.npm',
-        '.yarn',
-        'bower_components',
-        '__pycache__',
-        '.pytest_cache'
-    )
+    # Display help if requested
+    if ($Help) {
+        $helpText = @"
+USAGE:
+    sum [PATH] [OPTIONS]
 
-    # File patterns to exclude
-    $excludeFiles = @(
-        '*.exe',
-        '*.dll',
-        '*.pdb',
-        '*.suo',
-        '*.user',
-        '*.cache',
-        '*.bun.lock*',
-        '*.log',
-        '*.bak',
-        '*.swp',
-        '.DS_Store',
-        'Thumbs.db',
-        '*.pyc',
-        '*.pyo',
-        '*.so',
-        '*.lock',
-        '*.lockb',
-        '*.lock.json',
-        '*.lock.yaml',
-        '*.lock.yml',
-        '*.lock.toml'
-    )
+DESCRIPTION:
+    Summarizes code files in a directory for easy sharing with LLMs.
+    Automatically copies output to clipboard unless disabled.
 
-    if (-not (Test-Path $Path)) {
-        Write-Host "Error: Path '$Path' does not exist." -ForegroundColor Red
+ARGUMENTS:
+    PATH                    Directory to summarize (default: current directory)
+
+OPTIONS:
+    -MaxLength, -m VALUE    Maximum character length for output (default: 100000)
+    -All, -a                Include non-code files in output
+    -NoClipboard, -nc       Don't copy output to clipboard
+    -Hidden, -h             Include hidden files and directories
+    -Structure, -s          Only output project structure, no file contents
+    -FileFilter, -f VALUE   Additional file extensions to include (e.g., "*.txt")
+    -IgnoreDirs, -i VALUE   Additional directories to ignore
+    -Help                   Show this help information
+
+EXAMPLES:
+    sum                     # Summarize code in current directory
+    sum C:\projects\myapp   # Summarize code in specified directory
+    sum -a                  # Include all files, not just code files
+    sum -m 50000            # Limit output to 50,000 characters
+    sum -f "*.md","*.txt"   # Include markdown and text files
+    sum -i "temp","logs"    # Ignore "temp" and "logs" directories
+    sum -s                  # Show only structure, no file contents
+"@
+        Write-Host $helpText
         return
     }
 
-    Write-Host "📂 SUMMARY OF: $((Resolve-Path $Path).Path)" -ForegroundColor Cyan
-    Write-Host ("=" * 50)
+    # Common code file extensions
+    $codeExtensions = @(
+        # Web
+        '*.html', '*.css', '*.scss', '*.sass', '*.less', '*.js', '*.jsx', '*.ts', '*.tsx', 
+        '*.vue', '*.svelte', '*.php',
+        # Programming languages
+        '*.py', '*.rb', '*.go', '*.rs', '*.java', '*.cs', '*.cpp', '*.c', '*.h', '*.hpp',
+        '*.swift', '*.kt', '*.scala', '*.clj', '*.fs', '*.ex', '*.exs', '*.erl', '*.lua',
+        # Shell/Scripts
+        '*.sh', '*.bash', '*.ps1', '*.bat', '*.cmd', '*.psm1',
+        # Config files
+        '*.json', '*.yaml', '*.yml', '*.toml', '*.xml', '*.ini', '*.config', '*.conf',
+        '*.md', '*.rst',
+        # Other code files
+        '*.sql', '*.graphql', '*.proto', '*.tf', '*.dockerfile', '*.r'
+    )
 
-    # Get all files, excluding the specified directories and files upfront
-    $allFiles = Get-ChildItem -Path $Path -Recurse -File -Force:$IncludeHidden -ErrorAction Stop |
-        Where-Object { 
-            $file = $_
-            $shouldInclude = $true
-            
-            # Check if file is in an excluded directory
-            foreach ($dir in $excludeDirs) {
-                if ($file.FullName -match "[\\/]$dir[\\/]") {
-                    $shouldInclude = $false
+    # Add custom file filters if provided
+    if ($FileFilter) {
+        $codeExtensions += $FileFilter
+    }
+
+    # Directories to always exclude
+    $excludeDirs = @(
+        # Package managers
+        'node_modules', 'packages', 'vendor', '.npm', '.yarn', 'bower_components',
+        # Build artifacts
+        'bin', 'obj', 'dist', 'build', 'target', 'out', 'output', 'coverage', '.next',
+        # Cache directories
+        '__pycache__', '.pytest_cache', '.cache', '.nuget', '.gradle',
+        # IDE/Config folders
+        '.git', '.idea', '.vs', '.vscode', 
+        # Misc
+        'assets/images', 'public/images'
+    )
+
+    # Add custom dirs to ignore if provided
+    if ($IgnoreDirs) {
+        $excludeDirs += $IgnoreDirs
+    }
+
+    # Files to always exclude
+    $excludeFiles = @(
+        # Binaries and compiled files
+        '*.exe', '*.dll', '*.pdb', '*.so', '*.dylib', '*.class',
+        # Large data files
+        '*.zip', '*.tar', '*.gz', '*.rar', '*.7z', 
+        '*.jpg', '*.jpeg', '*.png', '*.gif', '*.bmp', '*.ico', '*.svg',
+        '*.mp3', '*.mp4', '*.avi', '*.mov', '*.wav',
+        '*.pdf', '*.doc', '*.docx', '*.xls', '*.xlsx', '*.ppt', '*.pptx',
+        # Logs and caches
+        '*.log', '*.cache', '*.bak', '*.swp', '*.tmp', '*.temp',
+        # Lock files
+        '*.lock', '*.lock.json', '*.lockb', 'package-lock.json', 'yarn.lock',
+        # OS artifacts
+        '.DS_Store', 'Thumbs.db'
+    )
+
+    # Create separate builders for console and clipboard
+    $consoleOutput = [System.Text.StringBuilder]::new()
+    $clipboardOutput = [System.Text.StringBuilder]::new()
+    
+    # Function to append text to appropriate outputs
+    function Write-Output-Both {
+        param (
+            [string]$Text,
+            [System.ConsoleColor]$ForegroundColor = [System.ConsoleColor]::White,
+            [switch]$SkipClipboard
+        )
+        
+        # Always write to console with color
+        Write-Host $Text -ForegroundColor $ForegroundColor
+        [void]$consoleOutput.AppendLine($Text)
+        
+        # For clipboard, skip if flagged
+        if (-not $SkipClipboard) {
+            [void]$clipboardOutput.AppendLine($Text)
+        }
+    }
+
+    if (-not (Test-Path $Path)) {
+        Write-Output-Both "Error: Path '$Path' does not exist." -ForegroundColor Red
+        return
+    }
+
+    # Calculate absolute path for display
+    $absolutePath = (Resolve-Path $Path).Path
+    Write-Output-Both "PROJECT SUMMARY: $absolutePath" -ForegroundColor Cyan
+
+    # Find gitignore patterns if exists
+    $ignorePatterns = @()
+    $gitignorePath = Join-Path $absolutePath ".gitignore"
+    if (Test-Path $gitignorePath) {
+        $ignorePatterns = Get-Content $gitignorePath -ErrorAction SilentlyContinue | 
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and -not $_.StartsWith('#') }
+    }
+
+    # Build file filter
+    $fileFilter = {
+        $file = $_
+        $relativePath = $file.FullName.Substring($absolutePath.Length).TrimStart('/', '\')
+        
+        # Check if in excluded directory
+        foreach ($dir in $excludeDirs) {
+            if ($relativePath -match "[\\/]$dir[\\/]" -or $relativePath -match "^$dir[\\/]") {
+                return $false
+            }
+        }
+        
+        # Check gitignore patterns
+        foreach ($pattern in $ignorePatterns) {
+            $regex = $pattern -replace '\.', '\.' -replace '\*\*', '.*' -replace '\*', '[^/\\]*' -replace '\?', '.'
+            if ($relativePath -match $regex) {
+                return $false
+            }
+        }
+        
+        # Check file pattern exclusions
+        foreach ($pattern in $excludeFiles) {
+            if ($file.Name -like $pattern) {
+                return $false
+            }
+        }
+        
+        # Filter for code files if not including non-code
+        if (-not $All) {
+            $isCodeFile = $false
+            foreach ($ext in $codeExtensions) {
+                if ($file.Name -like $ext) {
+                    $isCodeFile = $true
                     break
                 }
             }
-            
-            # Check if file matches excluded patterns
-            if ($shouldInclude) {
-                foreach ($pattern in $excludeFiles) {
-                    if ($file.Name -like $pattern) {
-                        $shouldInclude = $false
-                        break
-                    }
-                }
-            }
-            
-            $shouldInclude
-        } | Sort-Object LastWriteTime -Descending
+            return $isCodeFile
+        }
+        
+        return $true
+    }
+
+    # Get all files, applying our filter
+    $allFiles = Get-ChildItem -Path $Path -Recurse -File -Force:$Hidden -ErrorAction SilentlyContinue |
+        Where-Object $fileFilter | Sort-Object LastWriteTime -Descending
 
     $stats = @{
         TotalFiles = $allFiles.Count
         ProcessedFiles = 0
-        SkippedFiles = 0
-        Errors = 0
-        TotalCharsShown = 0
         TotalSizeMB = [math]::Round(($allFiles | Measure-Object -Property Length -Sum).Sum / 1MB, 2)
     }
 
     if ($allFiles.Count -eq 0) {
-        Write-Host "No files found after applying exclusions." -ForegroundColor Yellow
+        Write-Output-Both "No code files found after applying filters." -ForegroundColor Yellow
         return
     }
 
-    Write-Host "📊 Found $($stats.TotalFiles) files (Total size: $($stats.TotalSizeMB) MB)" -ForegroundColor Cyan
+    Write-Output-Both "Found $($stats.TotalFiles) files (Total size: $($stats.TotalSizeMB) MB)" -ForegroundColor Cyan
 
-    $filesToProcess = $null
-    if ($MaxLength -gt 0) {
-        $filesToProcess = Get-ContentLengths -Files $allFiles -TotalMaxLength $MaxLength
-    } else {
-        $filesToProcess = $allFiles | ForEach-Object {
-            @{
-                File = $_
-                AllocatedLength = -1
-                Content = $null
+    # Get file content lengths and allocate space
+    $filesToProcess = Get-ContentLengths -Files $allFiles -TotalMaxLength $MaxLength
+
+    # Process directory structure for a tree-like overview
+    $dirStructure = @{}
+    foreach ($fileInfo in $filesToProcess) {
+        $relativePath = $fileInfo.File.FullName.Substring($absolutePath.Length).TrimStart('/', '\')
+        $dirPath = [System.IO.Path]::GetDirectoryName($relativePath)
+        
+        if (-not $dirPath) { $dirPath = "." }
+        
+        if (-not $dirStructure.ContainsKey($dirPath)) {
+            $dirStructure[$dirPath] = @()
+        }
+        
+        $dirStructure[$dirPath] += @{
+            Name = [System.IO.Path]::GetFileName($fileInfo.File.FullName)
+            Size = [math]::Round($fileInfo.File.Length / 1KB, 2)
+        }
+    }
+
+    # Output directory structure
+    Write-Output-Both "`nPROJECT STRUCTURE:" -ForegroundColor Cyan
+    $dirPaths = $dirStructure.Keys | Sort-Object
+    foreach ($dir in $dirPaths) {
+        $indent = "  " * ($dir.Split('\', '/').Count - 1)
+        $dirName = if ($dir -eq ".") { "." } else { $dir.Split('\', '/')[-1] }
+        Write-Output-Both "$indent$dirName/" -ForegroundColor Yellow
+        
+        foreach ($file in $dirStructure[$dir]) {
+            $fileIndent = $indent + "  "
+            Write-Output-Both "$fileIndent$($file.Name) (${$file.Size}KB)" -ForegroundColor Gray
+        }
+    }
+
+    # If structure-only mode, skip file contents
+    if (-not $Structure) {
+        # Output file contents
+        Write-Output-Both "`nFILE CONTENTS:" -ForegroundColor Cyan -SkipClipboard
+        Write-Output-Both "`nFILE CONTENTS:"
+        
+        foreach ($fileInfo in $filesToProcess) {
+            try {
+                $relativePath = $fileInfo.File.FullName.Substring($absolutePath.Length).TrimStart('/', '\')
+                $lastModified = $fileInfo.File.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")
+                $sizeKB = [math]::Round($fileInfo.File.Length / 1KB, 2)
+                
+                Write-Output-Both "`nFILE: $relativePath [$lastModified, ${sizeKB}KB]" -ForegroundColor Yellow -SkipClipboard
+                Write-Output-Both "`nFILE: $relativePath [$lastModified, ${sizeKB}KB]"
+                
+                $content = $fileInfo.Content
+                if (-not $content) {
+                    $content = Get-Content -Path $fileInfo.File.FullName -Raw -ErrorAction Stop
+                }
+                
+                if ($fileInfo.AllocatedLength -gt 0 -and $content.Length -gt $fileInfo.AllocatedLength) {
+                    $content = $content.Substring(0, $fileInfo.AllocatedLength) + "`n... (truncated, file is larger)"
+                }
+                
+                if ([string]::IsNullOrEmpty($content)) {
+                    Write-Output-Both "Empty file" -ForegroundColor Gray -SkipClipboard
+                    Write-Output-Both "Empty file"
+                } else {
+                    # Determine language for code fence based on extension
+                    $ext = [System.IO.Path]::GetExtension($fileInfo.File.Name).TrimStart('.')
+                    $lang = switch ($ext) {
+                        { $_ -in @('js', 'jsx', 'ts', 'tsx') } { 'javascript' }
+                        { $_ -in @('py') } { 'python' }
+                        { $_ -in @('rs') } { 'rust' }
+                        { $_ -in @('go') } { 'go' }
+                        { $_ -in @('c', 'cpp', 'h', 'hpp') } { 'cpp' }
+                        { $_ -in @('cs') } { 'csharp' }
+                        { $_ -in @('java') } { 'java' }
+                        { $_ -in @('rb') } { 'ruby' }
+                        { $_ -in @('php') } { 'php' }
+                        { $_ -in @('ps1', 'psm1') } { 'powershell' }
+                        { $_ -in @('sh', 'bash') } { 'bash' }
+                        { $_ -in @('html') } { 'html' }
+                        { $_ -in @('css', 'scss', 'sass') } { 'css' }
+                        { $_ -in @('json') } { 'json' }
+                        { $_ -in @('xml') } { 'xml' }
+                        { $_ -in @('yaml', 'yml') } { 'yaml' }
+                        { $_ -in @('md', 'markdown') } { 'markdown' }
+                        { $_ -in @('sql') } { 'sql' }
+                        default { '' }
+                    }
+                    
+                    Write-Output-Both "```$lang" -ForegroundColor Gray -SkipClipboard
+                    Write-Output-Both "```$lang"
+                    Write-Output-Both $content -ForegroundColor Gray -SkipClipboard
+                    Write-Output-Both $content
+                    Write-Output-Both "```" -ForegroundColor Gray -SkipClipboard
+                    Write-Output-Both "```"
+                }
+                
+                $stats.ProcessedFiles++
+            }
+            catch {
+                Write-Output-Both "Error processing $($fileInfo.File.Name): $_" -ForegroundColor Red -SkipClipboard
+                Write-Output-Both "Error processing $($fileInfo.File.Name): $_"
             }
         }
     }
 
-    foreach ($fileInfo in $filesToProcess) {
+    # Output summary statistics
+    Write-Output-Both "`nSTATISTICS:" -ForegroundColor Cyan -SkipClipboard
+    Write-Output-Both "`nSTATISTICS:"
+    Write-Output-Both "Total files found: $($stats.TotalFiles)" -ForegroundColor Gray -SkipClipboard
+    Write-Output-Both "Total files found: $($stats.TotalFiles)"
+    Write-Output-Both "Files processed: $($stats.ProcessedFiles)" -ForegroundColor Gray -SkipClipboard
+    Write-Output-Both "Files processed: $($stats.ProcessedFiles)"
+    Write-Output-Both "Total size: $($stats.TotalSizeMB) MB" -ForegroundColor Gray -SkipClipboard
+    Write-Output-Both "Total size: $($stats.TotalSizeMB) MB"
+    
+    if ($MaxLength -gt 0) {
+        Write-Output-Both "Character limit: $MaxLength" -ForegroundColor Gray -SkipClipboard
+        Write-Output-Both "Character limit: $MaxLength"
+    }
+
+    # Copy output to clipboard if not disabled
+    if (-not $NoClipboard) {
+        $clipboardString = $clipboardOutput.ToString()
+        
+        # Try to copy to clipboard
         try {
-            $relativePath = $fileInfo.File.FullName -replace [regex]::Escape((Get-Location)), '.'
-            $lastModified = $fileInfo.File.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")
-            $sizeKB = [math]::Round($fileInfo.File.Length / 1KB, 2)
-            
-            Write-Host "`n📄 $relativePath" -ForegroundColor Yellow
-            Write-Host "   Modified: $lastModified | Size: ${sizeKB}KB" -ForegroundColor Gray
-            Write-Host ("-" * 30)
-            
-            $summary = Get-FileContentSummary -File $fileInfo.File -MaxLength $fileInfo.AllocatedLength -Content $fileInfo.Content
-            Write-Host $summary
-            
-            $stats.ProcessedFiles++
-            if ($fileInfo.AllocatedLength -gt 0) {
-                $stats.TotalCharsShown += $fileInfo.AllocatedLength
-            }
+            $clipboardString | Set-Clipboard
+            Write-Host "`nProject summary copied to clipboard ($($clipboardString.Length) characters)" -ForegroundColor Green
         }
         catch {
-            Write-Host "❌ Error processing $($fileInfo.File.Name): $_" -ForegroundColor Red
-            $stats.Errors++
+            Write-Host "`nFailed to copy to clipboard: $_" -ForegroundColor Red
         }
     }
-
-    Write-Host "`n$("=" * 50)"
-    Write-Host "📈 STATISTICS:" -ForegroundColor Cyan
-    Write-Host "• Total files found: $($stats.TotalFiles)" -ForegroundColor Gray
-    Write-Host "• Total size: $($stats.TotalSizeMB) MB" -ForegroundColor Gray
-    Write-Host "• Files processed: $($stats.ProcessedFiles)" -ForegroundColor Gray
-    if ($MaxLength -gt 0) {
-        Write-Host "• Total chars shown: $($stats.TotalCharsShown)" -ForegroundColor Gray
-        Write-Host "• Max length limit: $MaxLength" -ForegroundColor Gray
-    }
-    if ($stats.Errors -gt 0) {
-        Write-Host "• Errors encountered: $($stats.Errors)" -ForegroundColor Red
-    }
-    Write-Host ("=" * 50)
+    
+    return $clipboardOutput.ToString()
 }
 
 Set-Alias -Name summarize -Value sum
-
-function aifix {
-    param (
-        [Parameter(Position=0)]
-        [string]$Path = ".",
-        
-        [Parameter(Position=1, Mandatory=$true)]
-        [string]$Instruction,
-        
-        [Parameter()]
-        [switch]$WhatIf
- 
-    )
-    
-    # Validate API key
-    $apiKey = $env:ANTHROPIC_API_KEY
-    if (-not $apiKey) {
-        Write-Host "Error: ANTHROPIC_API_KEY environment variable not set" -ForegroundColor Red
-        return
-    }
-
-    # Get absolute path
-    $Path = Resolve-Path $Path
-    if (-not $Path) {
-        Write-Host "Error: Invalid path specified" -ForegroundColor Red
-        return
-    }
-
-    # First, get the files using the existing logic from sum
-    $ignorePatterns = @()
-    $gitignorePath = Join-Path (Get-Location) ".gitignore"
-    if (Test-Path $gitignorePath) {
-        $ignorePatterns = Get-Content $gitignorePath -ErrorAction SilentlyContinue
-    }
-
-    $ignorePatterns += @(
-        '.git/**',
-        'node_modules/**',
-        'bin/**',
-        'obj/**',
-        '.vs/**',
-        '*.suo',
-        '*.user',
-        '.DS_Store'
-    )
-
-    # Get all files using the same logic as sum
-    $allFiles = Get-ChildItem -Path $Path -Recurse -File -ErrorAction Stop | 
-        Where-Object { -not (Test-ShouldIgnorePath -Path $_.FullName -IgnorePatterns $ignorePatterns) }
-
-    if (-not $allFiles -or $allFiles.Count -eq 0) {
-        Write-Host "No files found in path: $Path" -ForegroundColor Red
-        return
-    }
-
-    Write-Host "`n📂 Processing" -NoNewline -ForegroundColor Cyan
-    Write-Host " $($allFiles.Count) " -NoNewline -ForegroundColor Yellow
-    Write-Host "files...`n" -ForegroundColor Cyan
-
-    # Get file contents using ContentLengths
-    $filesToProcess = Get-ContentLengths -Files $allFiles -TotalMaxLength 100000
-    
-    # Build file contents dictionary
-    $fileContents = @{}
-    foreach ($fileInfo in $filesToProcess) {
-        try {
-            $relativePath = $fileInfo.File.FullName -replace [regex]::Escape((Get-Location)), '.'
-            $summary = Get-FileContentSummary -File $fileInfo.File -MaxLength $fileInfo.AllocatedLength -Content $fileInfo.Content
-            
-            # Strip the markdown code block markers
-            $content = $summary -replace '^```\r?\n?', '' -replace '\r?\n?```$', ''
-            
-            if ($content -ne "Binary file - preview not available" -and 
-                $content -ne "Empty file" -and 
-                -not $content.StartsWith("Error reading file:")) {
-                $fileContents[$relativePath] = $content
-            }
-        }
-        catch {
-            Write-Host "❌ Error processing $($fileInfo.File.Name): $_" -ForegroundColor Red
-            continue
-        }
-    }
-
-    if ($fileContents.Count -eq 0) {
-        Write-Host "❌ No valid files found to process" -ForegroundColor Red
-        return
-    }
-
-    Write-Host "📄 Found" -NoNewline -ForegroundColor Cyan
-    Write-Host " $($fileContents.Count) " -NoNewline -ForegroundColor Yellow
-    Write-Host "files to process" -ForegroundColor Cyan
-
-    Write-Host "`n📋 Files found:" -ForegroundColor Cyan
-    foreach ($file in $fileContents.Keys) {
-        Write-Host "   • $file" -ForegroundColor Gray
-    }
-
-    # Generate prompt for Claude
-    $prompt = @"
-As an expert developer, modify the code according to this instruction: $Instruction
-
-Current files:
-$('-' * 50)
-$(foreach ($file in $fileContents.Keys) {
-@"
-
-FILE: $file
-$('-' * 30)
-$($fileContents[$file])
-
-"@
-})
-
-Provide modifications in this exact format for each file that needs to be changed:
-
----FILE_MODIFICATION_START---
-filepath: <relative/path/to/file>
-action: <modify or create>
-content:```
-<complete file content>
-```
----FILE_MODIFICATION_END---
-
-Important:
-- Use exactly this format for each file modification
-- Provide the complete new content for each file, not just the changes
-- Use relative paths from the root directory
-- Only include files that need to be modified or created
-"@
-
- 
-        Write-Host "`nGenerated prompt:"
-        Write-Host $prompt -ForegroundColor Cyan
-  
-
-    # Call Claude API
-    $headers = @{
-        'x-api-key' = $apiKey
-        'anthropic-version' = '2023-06-01'
-        'content-type' = 'application/json'
-    }
-
-    $body = @{
-        model = 'claude-3-5-sonnet-20241022'
-        max_tokens = 4096
-        messages = @(
-            @{
-                role = "user"
-                content = $prompt
-            }
-        )
-    } | ConvertTo-Json -Depth 10
-
-    try {
-        Write-Host "Sending request to Claude API..."
-        $response = Invoke-RestMethod `
-            -Uri "https://api.anthropic.com/v1/messages" `
-            -Method Post `
-            -Headers $headers `
-            -Body $body
-
-        $aiResponse = $response.content.text
-
-        if ($Debug) {
-            Write-Host "`nAPI Response:"
-            Write-Host $aiResponse
-        }
-
-        # Parse modifications from response
-        $modPattern = '(?ms)---FILE_MODIFICATION_START---.*?filepath:\s*(?<path>.*?)[\r\n]+action:\s*(?<action>.*?)[\r\n]+content:[\r\n]+```(?<content>.*?)```[\r\n]+---FILE_MODIFICATION_END---'
-        $modifications = [regex]::Matches($aiResponse, $modPattern)
-
-        if ($modifications.Count -eq 0) {
-            Write-Host "No file modifications found in AI response" -ForegroundColor Red
-            return
-        }
-
-        # Preview changes
-        Write-Host "`nProposed changes:"
-        foreach ($mod in $modifications) {
-            $filePath = $mod.Groups['path'].Value.Trim()
-            $action = $mod.Groups['action'].Value.Trim()
-            Write-Host "• $action`: $filePath"
-        }
-
-        if ($WhatIf) {
-            Write-Host "`nWhatIf: No changes made"
-            return
-        }
-
-        # Confirm changes
-        $confirm = Read-Host "`nApply these changes? (y/N)"
-        if ($confirm -ne 'y') {
-            Write-Host "Operation cancelled"
-            return
-        }
-
-        # Apply modifications
-        $succeeded = 0
-        $failed = 0
-
-        foreach ($mod in $modifications) {
-            $filePath = $mod.Groups['path'].Value.Trim()
-            $action = $mod.Groups['action'].Value.Trim()
-            $content = $mod.Groups['content'].Value
-
-            try {
-                $fullPath = Join-Path (Get-Location) $filePath
-                $fullPath = [System.IO.Path]::GetFullPath($fullPath)
-                
-                # Security check: ensure path is within current directory
-                $currentDir = [System.IO.Path]::GetFullPath((Get-Location))
-                if (-not $fullPath.StartsWith($currentDir)) {
-                    throw "Security violation: Path is outside current directory"
-                }
-
-                # Create directory if needed
-                $directory = [System.IO.Path]::GetDirectoryName($fullPath)
-                if (-not (Test-Path $directory)) {
-                    New-Item -ItemType Directory -Path $directory -Force | Out-Null
-                }
-
-                # Apply change
-                Set-Content -Path $fullPath -Value $content -NoNewline
-                Write-Host "✓ Modified $filePath" -ForegroundColor Green
-                $succeeded++
-            }
-            catch {
-                Write-Host "✗ Failed to modify $filePath`: $_" -ForegroundColor Red
-                $failed++
-            }
-        }
-
-        # Report results
-        Write-Host "`nResults:"
-        Write-Host "• Succeeded: $succeeded"
-        if ($failed -gt 0) {
-            Write-Host "• Failed: $failed" -ForegroundColor Red
-        }
-    }
-    catch {
-        Write-Host "Error: $_" -ForegroundColor Red
-        if ($Debug) {
-            Write-Host $_.ScriptStackTrace -ForegroundColor Red
-        }
-    }
-}
-
-Set-Alias -Name fix -Value aifix
-
- 
-# gitrun [github url]
-# automatically clones the repo to C:\repo\<repo name> and runs it using cargo run
-function gitrun {
-    param (
-        [Parameter(Position=0)]
-        [string]$Url
-    )
-
-    try {
-        # Extract repo name from URL
-        $repoName = $Url -replace '.*github\.com/[^/]+/([^/]+)(\.git)?$','$1'
-        if ([string]::IsNullOrEmpty($repoName)) {
-            throw "Invalid GitHub URL format"
-        }
-
-        # Set target directory
-        $targetDir = "C:\repo\$repoName"
-
-        # Create parent directory if it doesn't exist
-        if (-not (Test-Path "C:\repo")) {
-            New-Item -ItemType Directory -Path "C:\repo" | Out-Null
-        }
-
-        # Clone the repository if it doesn't exist
-        if (-not (Test-Path $targetDir)) {
-            Write-Host "Cloning repository to $targetDir..." -ForegroundColor Cyan
-            git clone $Url $targetDir
-            if ($LASTEXITCODE -ne 0) {
-                throw "Git clone failed"
-            }
-        }
-
-        # Change to repo directory
-        Push-Location $targetDir
-
-        # Run with cargo
-        Write-Host "Building and running with cargo..." -ForegroundColor Cyan
-        cargo run
-
-        # Return to original directory
-        Pop-Location
-    }
-    catch {
-        Write-Host "Error: $_" -ForegroundColor Red
-        if ($Debug) {
-            Write-Host $_.ScriptStackTrace -ForegroundColor Red
-        }
-    }
-}
-
-
-# bump 
-# 1- checks if pwd is a git repo 
-# 2- checks if there is a bump.ps1 in the repo. if yes, it will just run it and exit
-# 3- if not, it will check if there are any uncommitted changes and create a commit with the message "bump" and the current date and push it to the remote repo
-function bump {
-    # Check if current directory is a git repo
-    if (-not (Test-Path .git)) {
-        Write-Host "Not in a git repo" -ForegroundColor Red
-        return
-    }
-
-    # Check for bump.ps1 and run it if exists
-    if (Test-Path "bump.ps1") {
-        Write-Host "Found bump.ps1, executing..." -ForegroundColor Cyan
-        & .\bump.ps1
-        return
-    }
-
-    # Check for uncommitted changes
-    $status = git status --porcelain
-    if ($status) {
-        # Get current date in ISO format
-        $date = Get-Date -Format "yyyy-MM-dd"
-        $message = "bump: $date"
-
-        Write-Host "Creating commit with message: $message" -ForegroundColor Cyan
-        
-        # Stage all changes
-        git add .
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "Failed to stage changes" -ForegroundColor Red
-            return
-        }
-
-        # Create commit
-        git commit -m $message
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "Failed to create commit" -ForegroundColor Red
-            return
-        }
-
-        # Push changes
-        Write-Host "Pushing changes..." -ForegroundColor Cyan
-        git push
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "Failed to push changes" -ForegroundColor Red
-            return
-        }
-
-        Write-Host "Successfully bumped repository" -ForegroundColor Green
-    } else {
-        Write-Host "No changes to commit" -ForegroundColor Yellow
-    }
-}
