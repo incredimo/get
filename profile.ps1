@@ -81,11 +81,11 @@ function fmt {
 #  █ █▀▀▄ ▄▀▀ █▀█ █▀▀ █▀▀▄ █ █▀█▀▄ █▀▀▄
 #  █ █  █ █▄▄ █▀▄ ██▄ █▄▄▀ █ █ █ █ ▀▄▄█
 # Banner art: you can mix block characters (e.g., █, ▄, or ▀)
-$banner = @(
-    "█ █▀▀▄ ▄▀▀ █▀█ █▀▀ █▀▀▄ █ █▀█▀▄ █▀▀▄  AGHIL KUTTIKATIL MOHANDAS",
-    "█ █  █ █▄▄ █▀▄ ██▄ █▄▄▀ █ █ █ █ ▀▄▄█  a@xo.rs | incredimo.com "
-    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-)
+# $banner = @(
+#     "█ █▀▀▄ ▄▀▀ █▀█ █▀▀ █▀▀▄ █ █▀█▀▄ █▀▀▄  AGHIL KUTTIKATIL MOHANDAS",
+#     "█ █  █ █▄▄ █▀▄ ██▄ █▄▄▀ █ █ █ █ ▀▄▄█  a@xo.rs | incredimo.com "
+#     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+# )
 
 # Define the block characters we want to process.
 $blockChars = @("█", "▄", "▀")
@@ -117,76 +117,174 @@ function Format-Block {
     )
     return "$([char]27)[38;2;${r};${g};${b}m$char$([char]27)[0m"
 }
+$banner = @(
+    "██ ██████     ████ ██████   ██████ ██████   ██ ████████   ██████ ",
+    "██ ██    ██ ██     ██    ██ ██     ██    ██ ██ ██  ██  ██ ██    ██",
+    "██ ██    ██ ██     ██████   ████   ██    ██ ██ ██  ██  ██ ██    ██",
+    "██ ██    ██ ██████ ██    ██ ██████ ██████   ██ ██  ██  ██   ██████"
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+)
+
+
+function Show-CustomBanner {
+    param(
+        [array]$GradientColors = @(
+            @(230, 230, 230), # Dimmest white
+            @(230, 230, 230),
+            @(230, 230, 230),
+            @(230, 230, 230),
+            @(230, 230, 230),
+            @(230, 230, 230)  # Brightest white
+        ),
+        # FFBE0B
+        # FB5607
+        # FF006E
+        # 8338EC
+        # 3A86FF
+        [array]$RainbowColors = @(
+            @(63, 81, 181),     # 3F51B5
+            @(33, 150, 243),   # 2196F3
+            @(3, 169, 244),    # 03A9F4
+            @(0, 150, 136),    # 009688
+            @(76, 175, 80),    # 4CAF50
+            @(205, 220, 57),   # CDDC39
+            @(255, 193, 7),    # FFC107
+            @(255, 152, 0),    # FF9800
+            @(255, 87, 34),    # FF5722
+            @(244, 67, 54)     # F44336
+        )
+    )
+
+    # Helper function to format colored blocks
+    function Format-ColorBlock {
+        param([int]$r, [int]$g, [int]$b)
+        return "$([char]27)[38;2;${r};${g};${b}m██$([char]27)[0m"
+    }
+
+    $coloredArt = ""
+
+    # Pre-generate color blocks
+    $gradientBlocks = $GradientColors | ForEach-Object {
+        Format-ColorBlock -r $_[0] -g $_[1] -b $_[2]
+    }
+
+    $rainbowBlocks = $RainbowColors | ForEach-Object {
+        Format-ColorBlock -r $_[0] -g $_[1] -b $_[2]
+    }
+
+
+
+    foreach ($line in $banner) {
+        $pos = 0
+        $blockCount = 0
+        $totalBlocks = ($line | Select-String "██" -AllMatches).Matches.Count
+
+        while ($pos -lt $line.Length) {
+            if ($pos + 1 -lt $line.Length -and $line.Substring($pos, 2) -eq "██") {
+                if ($blockCount -ge ($totalBlocks - $rainbowBlocks.Count)) {
+                    # Last blocks get rainbow colors
+                    $colorIndex = $blockCount - ($totalBlocks - $rainbowBlocks.Count)
+                    $coloredArt += $rainbowBlocks[$colorIndex]
+                }
+                elseif ($blockCount -lt $gradientBlocks.Count) {
+                    # First blocks get gradient colors
+                    $coloredArt += $gradientBlocks[$blockCount]
+                }
+                else {
+                    # Middle blocks get brightest gradient color
+                    $coloredArt += $gradientBlocks[-1]
+                }
+                $blockCount++
+                $pos += 2
+            }
+            else {
+                $coloredArt += $line[$pos]
+                $pos++
+            }
+        }
+        $coloredArt += "`n"
+    }
+
+    $osVersion = $env:OS
+    $powershellVersion = $PSVersionTable.PSVersion
+    $coloredArt += "$env:COMPUTERNAME | $env:USERNAME | $(Get-Date -Format 'dd-MM-yyyy hh:mm tt')`n"
+    $coloredArt += "$env:PROCESSOR_ARCHITECTURE | $osVersion | PS $powershellVersion`n"
+    $coloredArt += "BUILD INCREDIBLE THINGS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    Write-Host $coloredArt
+}
+Show-CustomBanner
+
 
 # Main function that builds the banner:
 # - Accepts an angle (in degrees) for the gradient.
 # - Accepts a white threshold which is the fraction of the gradient (0 to 1) that stays white.
-function Show-CustomBanner {
-    param(
-        [double]$Angle = 45.0,         # Angle in degrees (default is 45°)
-        [double]$WhiteThreshold = 0.3    # Fraction of the projection range that remains white.
-    )
+# function Show-CustomBanner {
+#     param(
+#         [double]$Angle = 45.0,         # Angle in degrees (default is 45°)
+#         [double]$WhiteThreshold = 0.3    # Fraction of the projection range that remains white.
+#     )
 
-    # Convert the angle from degrees to radians.
-    $theta = $Angle * [Math]::PI / 180.0
+#     # Convert the angle from degrees to radians.
+#     $theta = $Angle * [Math]::PI / 180.0
 
-    # First pass: determine the maximum projection value among all block characters.
-    # Projection for each block = (column * cos(theta) + row * sin(theta))
-    $maxProj = 0.0
-    for ($row = 0; $row -lt $banner.Count; $row++) {
-        $line = $banner[$row]
-        for ($col = 0; $col -lt $line.Length; $col++) {
-            $char = $line[$col]
-            if ($blockChars -contains $char) {
-                $proj = $col * [Math]::Cos($theta) + $row * [Math]::Sin($theta)
-                if ($proj -gt $maxProj) { $maxProj = $proj }
-            }
-        }
-    }
+#     # First pass: determine the maximum projection value among all block characters.
+#     # Projection for each block = (column * cos(theta) + row * sin(theta))
+#     $maxProj = 0.0
+#     for ($row = 0; $row -lt $banner.Count; $row++) {
+#         $line = $banner[$row]
+#         for ($col = 0; $col -lt $line.Length; $col++) {
+#             $char = $line[$col]
+#             if ($blockChars -contains $char) {
+#                 $proj = $col * [Math]::Cos($theta) + $row * [Math]::Sin($theta)
+#                 if ($proj -gt $maxProj) { $maxProj = $proj }
+#             }
+#         }
+#     }
 
-    # Build the colored banner output.
-    $coloredArt = ""
-    for ($row = 0; $row -lt $banner.Count; $row++) {
-        $line = $banner[$row]
-        $lineOutput = ""
-        for ($col = 0; $col -lt $line.Length; $col++) {
-            $char = $line[$col]
-            if ($blockChars -contains $char) {
-                # Compute the projection of this block.
-                $proj = $col * [Math]::Cos($theta) + $row * [Math]::Sin($theta)
-                # Compute the relative position (ratio) along the gradient [0, 1]
-                $ratio = if ($maxProj -eq 0) { 0 } else { $proj / $maxProj }
+#     # Build the colored banner output.
+#     $coloredArt = ""
+#     for ($row = 0; $row -lt $banner.Count; $row++) {
+#         $line = $banner[$row]
+#         $lineOutput = ""
+#         for ($col = 0; $col -lt $line.Length; $col++) {
+#             $char = $line[$col]
+#             if ($blockChars -contains $char) {
+#                 # Compute the projection of this block.
+#                 $proj = $col * [Math]::Cos($theta) + $row * [Math]::Sin($theta)
+#                 # Compute the relative position (ratio) along the gradient [0, 1]
+#                 $ratio = if ($maxProj -eq 0) { 0 } else { $proj / $maxProj }
                 
-                if ($ratio -lt $WhiteThreshold) {
-                    # If the ratio is below the white threshold, render the block in white.
-                    $lineOutput += Format-Block -char $char -r $WhiteRGB[0] -g $WhiteRGB[1] -b $WhiteRGB[2]
-                }
-                else {
-                    # Otherwise, scale the ratio into the rainbow range.
-                    $relativeRainbow = ($ratio - $WhiteThreshold) / (1 - $WhiteThreshold)
-                    $index = [Math]::Round($relativeRainbow * ($RainbowColors.Count - 1))
-                    if ($index -ge $RainbowColors.Count) { $index = $RainbowColors.Count - 1 }
-                    $color = $RainbowColors[$index]
-                    $lineOutput += Format-Block -char $char -r $color[0] -g $color[1] -b $color[2]
-                }
-            }
-            else {
-                # Characters that aren't in $blockChars are output unchanged.
-                $lineOutput += $char
-            }
-        }
-        $coloredArt += $lineOutput + "`n"
-    }
+#                 if ($ratio -lt $WhiteThreshold) {
+#                     # If the ratio is below the white threshold, render the block in white.
+#                     $lineOutput += Format-Block -char $char -r $WhiteRGB[0] -g $WhiteRGB[1] -b $WhiteRGB[2]
+#                 }
+#                 else {
+#                     # Otherwise, scale the ratio into the rainbow range.
+#                     $relativeRainbow = ($ratio - $WhiteThreshold) / (1 - $WhiteThreshold)
+#                     $index = [Math]::Round($relativeRainbow * ($RainbowColors.Count - 1))
+#                     if ($index -ge $RainbowColors.Count) { $index = $RainbowColors.Count - 1 }
+#                     $color = $RainbowColors[$index]
+#                     $lineOutput += Format-Block -char $char -r $color[0] -g $color[1] -b $color[2]
+#                 }
+#             }
+#             else {
+#                 # Characters that aren't in $blockChars are output unchanged.
+#                 $lineOutput += $char
+#             }
+#         }
+#         $coloredArt += $lineOutput + "`n"
+#     }
 
  
 
-    Write-Host $coloredArt
-}
+#     Write-Host $coloredArt
+# }
 
-# --- Usage Examples ---
+# # --- Usage Examples ---
 
-# Full range gradient at a 45° angle with 30% white at the beginning.
-Show-CustomBanner -Angle 45 -WhiteThreshold 0.45
+# # Full range gradient at a 45° angle with 30% white at the beginning.
+# Show-CustomBanner -Angle 45 -WhiteThreshold 0.45
 
 # For example, try a different angle (like 60°) and adjust the white threshold as needed:
 # Show-CustomBanner -Angle 60 -WhiteThreshold 0.2
